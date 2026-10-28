@@ -1,0 +1,1491 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+</head>
+<body>
+<title>川島都市圏鉄道</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=M+PLUS+Rounded+1c:wght@500;700;800&display=swap">
+<style>
+/* Layout: 全面の路線図キャンバスの上に、ゲーム風のカードUIを四隅と下中央に重ねる（明るい単一テーマ） */
+:root{
+  --land:#F7F7F3; --water:#CFE5F2; --water-ink:#7DA9C4; --park:#DCEDD5;
+  --ink:#1E2329; --muted:#8A9096; --card:#FFFFFF; --rule:#E3E5E1;
+  --gold:#F4B400; --good:#2DA44E; --good-bg:#E3F5E6; --bad:#D9412B;
+  --b-line:#2F7BE5; --b-car:#22A55B; --b-sight:#F0A400; --b-bank:#8A55D8; --b-set:#9AA1A8;
+  --font:'M PLUS Rounded 1c','Hiragino Maru Gothic ProN','Hiragino Sans','Noto Sans JP',system-ui,sans-serif;
+  --gl:max(16px,env(safe-area-inset-left,0px)); --gr:max(16px,env(safe-area-inset-right,0px));
+  --gt:calc(12px + env(safe-area-inset-top,0px)); --gb:calc(12px + env(safe-area-inset-bottom,0px));
+  color-scheme:light;
+}
+[hidden]{display:none!important}
+html{box-sizing:border-box;height:100%}
+*,*::before,*::after{box-sizing:inherit}
+body{height:100%;margin:0;overflow:hidden;background:var(--land);color:var(--ink);font-family:var(--font);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#cv{position:fixed;inset:0;width:100%;height:100%;touch-action:none;cursor:grab;display:block;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+body{-webkit-tap-highlight-color:transparent}
+#cv.drag{cursor:grabbing}
+.card{background:var(--card);border-radius:16px;box-shadow:0 2px 0 rgba(0,0,0,.06),0 6px 22px rgba(30,35,41,.10);border:1px solid var(--rule)}
+.num{font-variant-numeric:tabular-nums}
+
+/* 上中央：レベルと時計 */
+#hudTop{position:fixed;top:var(--gt);left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:16px;padding:8px 18px 8px 10px;z-index:3}
+.lvBadge{width:48px;height:48px;border-radius:50%;background:#7C4DDB;color:#fff;display:grid;place-items:center;font-weight:800;font-size:1.35rem;box-shadow:inset 0 -4px 0 rgba(0,0,0,.18);flex:0 0 auto}
+.lvText{display:flex;flex-direction:column;gap:5px;min-width:120px}
+.lvText b{font-size:1.05rem;font-weight:800}
+.lvText b span{color:#7C4DDB;font-size:.85rem;margin-left:6px}
+.bar{height:7px;border-radius:9px;background:#ECEAF3;overflow:hidden}
+.bar i{display:block;height:100%;width:0;background:#7C4DDB;border-radius:9px;transition:width .3s}
+.clock{border-left:1px solid var(--rule);padding-left:16px;display:flex;flex-direction:column}
+.clock .t{font-size:1.6rem;font-weight:800;letter-spacing:.02em;line-height:1.1}
+.clock .d{font-size:.8rem;color:#5D646B;font-weight:700}
+
+/* 右上：成績 */
+#stats{position:fixed;top:var(--gt);right:var(--gr);padding:12px 16px;z-index:3;width:290px;display:grid;gap:6px}
+.row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-weight:700}
+.row .k{color:#5A6A7E;font-size:.88rem;display:flex;align-items:center;gap:7px}
+.row .k i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.row .v{font-size:1.05rem;font-weight:800}
+#satBar{height:7px;border-radius:9px;background:#EFEDE3;overflow:hidden}
+#satBar i{display:block;height:100%;background:var(--gold);width:50%;transition:width .3s}
+
+/* 左下：所持金 */
+#wallet{position:fixed;left:var(--gl);bottom:var(--gb);z-index:3;display:grid;gap:8px}
+.area{padding:8px 14px;display:flex;align-items:center;gap:10px}
+.area .flag{width:22px;height:22px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#2F7BE5 0 30%,#fff 31% 55%,#E8412C 56%)}
+.area small{display:block;color:var(--muted);font-size:.7rem;font-weight:700}
+.area b{font-size:1.15rem;font-weight:800}
+.money{padding:12px 18px 12px 12px;display:flex;align-items:center;gap:14px}
+.coin{width:58px;height:58px;border-radius:50%;background:var(--gold);color:#7A4F00;display:grid;place-items:center;font-weight:800;font-size:1.6rem;box-shadow:inset 0 -5px 0 rgba(0,0,0,.14),0 0 0 3px #FFE38A;flex:0 0 auto}
+.money .m{font-size:2rem;font-weight:800;line-height:1.05}
+.money .r{display:inline-block;margin-top:4px;background:var(--good-bg);color:var(--good);font-weight:800;font-size:.85rem;padding:2px 10px;border-radius:999px}
+
+/* 下中央：メニュー */
+#dock{position:fixed;left:50%;bottom:var(--gb);transform:translateX(-50%);z-index:3;display:flex;gap:8px;padding:8px}
+.dbtn{appearance:none;border:0;cursor:pointer;width:76px;height:72px;border-radius:14px;color:#fff;font:inherit;font-weight:800;font-size:1rem;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;background:var(--c);box-shadow:inset 0 -5px 0 rgba(0,0,0,.2);text-shadow:0 1px 0 rgba(0,0,0,.25)}
+.dbtn svg{width:28px;height:28px}
+.dbtn:active{transform:translateY(2px);box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
+.dbtn.on{outline:3px solid var(--ink);outline-offset:2px}
+
+/* 右下：ズーム */
+#zoom{position:fixed;right:var(--gr);bottom:var(--gb);z-index:3;display:flex;flex-direction:column;gap:8px}
+.zb{appearance:none;border:1px solid var(--rule);background:var(--card);width:48px;height:48px;border-radius:12px;font:inherit;font-size:1.5rem;font-weight:800;color:var(--ink);cursor:pointer;box-shadow:0 3px 0 rgba(0,0,0,.07)}
+.zb.s{font-size:.72rem}
+.zb[aria-pressed="true"]{background:var(--ink);color:#fff;border-color:var(--ink)}
+
+/* パネル */
+#panel{position:fixed;right:var(--gr);top:var(--gt);bottom:calc(var(--gb) + 96px);width:370px;max-width:calc(100% - 32px);z-index:5;display:flex;flex-direction:column;overflow:hidden}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:14px 16px 10px;border-bottom:1px solid var(--rule)}
+.ph h3{margin:0;font-size:1.15rem;font-weight:800;text-wrap:balance}
+.ph button{appearance:none;border:0;background:#F0F1EE;width:32px;height:32px;border-radius:50%;font:inherit;font-size:1.1rem;font-weight:800;cursor:pointer;color:var(--ink)}
+#pBody{overflow:auto;padding:12px 16px 16px;display:grid;gap:12px;align-content:start}
+.item{border:1px solid var(--rule);border-radius:12px;padding:10px 12px;display:grid;gap:8px}
+.ihead{display:flex;align-items:center;gap:8px;font-weight:800}
+.chip{width:14px;height:14px;border-radius:50%;background:var(--c);flex:0 0 auto}
+.ihead .st{margin-left:auto;font-size:.75rem;color:var(--muted);font-weight:700}
+.note{font-size:.78rem;color:var(--muted);line-height:1.6;margin:0}
+.seg{display:flex;align-items:center;gap:8px;justify-content:space-between;font-size:.85rem;font-weight:700}
+.seg span{min-width:0}
+.tag{font-size:.68rem;background:#E8F1FA;color:#2F6FB0;padding:1px 6px;border-radius:6px;margin-left:4px;white-space:nowrap}
+.buy{appearance:none;border:0;cursor:pointer;font:inherit;font-weight:800;font-size:.82rem;color:#fff;background:var(--good);border-radius:10px;padding:7px 11px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18);white-space:nowrap;flex:0 0 auto}
+.buy:disabled{background:#C5CAC6;cursor:not-allowed}
+.buy.alt{background:var(--b-line)}
+.buy.warn{background:var(--bad)}
+.meter{height:8px;border-radius:9px;background:#EEF0EC;overflow:hidden}
+.meter i{display:block;height:100%;background:var(--c,var(--good))}
+.kv{display:flex;justify-content:space-between;font-size:.82rem;font-weight:700;color:#4A5157}
+button:focus-visible{outline:3px solid var(--b-line);outline-offset:2px}
+#toast{position:fixed;top:calc(var(--gt) + 132px);left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;font-weight:700;font-size:.88rem;padding:8px 16px;border-radius:999px;z-index:9;pointer-events:none;opacity:0;transition:opacity .25s;max-width:calc(100% - 32px);text-align:center}
+#toast.show{opacity:1}
+
+/* スマホ */
+#rankCard{position:fixed;top:calc(var(--gt) + 178px);right:var(--gr);width:290px;z-index:3;padding:12px 14px;display:grid;gap:6px}
+#rankCard h4{margin:0;font-size:.92rem;font-weight:800;display:flex;align-items:center;gap:8px}
+#rankCard h4 .on{margin-left:auto;font-size:.72rem;color:var(--good);background:var(--good-bg);border-radius:999px;padding:1px 8px}
+.rk{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;font-size:.84rem;font-weight:700;min-width:0}
+.rk .n{color:#8A6D00;font-weight:800;text-align:center}
+.rk .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.rk .sc{color:var(--good);font-weight:800;font-variant-numeric:tabular-nums}
+.rk.me .nm{color:var(--b-line)}
+.watch{appearance:none;border:0;cursor:pointer;width:100%;font:inherit;font-weight:800;font-size:.85rem;color:#fff;background:var(--b-line);border-radius:10px;padding:7px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.18)}
+#bdTip{position:fixed;z-index:9;pointer-events:none;background:var(--card);border:2px solid var(--ink);border-radius:12px;padding:8px 12px;font-size:.82rem;font-weight:700;box-shadow:0 6px 20px rgba(30,35,41,.18);display:grid;gap:3px;max-width:260px}
+#bdTip .tt{font-size:1.05rem;font-weight:800;color:var(--good)}
+#bdTip.ng{border-color:var(--bad)} #bdTip.ng .tt{color:var(--bad)}
+#bdTip .ln{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#bdTip .ln i{width:10px;height:10px;border-radius:50%;flex:0 0 auto}
+#notice{position:fixed;top:calc(var(--gt) + 80px);left:50%;transform:translateX(-50%);z-index:8;display:flex;align-items:center;gap:10px;padding:9px 18px 9px 10px;font-weight:800;font-size:.95rem;background:#FFF7DA;border:2px solid var(--gold);border-radius:999px;box-shadow:0 6px 22px rgba(30,35,41,.16);max-width:calc(100% - 32px);transition:opacity .3s}
+#notice .tro{width:30px;height:30px;border-radius:50%;background:var(--gold);display:grid;place-items:center;flex:0 0 auto}
+#notice .tro svg{width:18px;height:18px}
+#notice span{min-width:0}
+#notice.hide{opacity:0}
+#specBar{position:fixed;top:calc(var(--gt) + 184px);left:50%;transform:translateX(-50%);z-index:6;display:flex;align-items:center;gap:10px;padding:8px 10px 8px 16px;font-weight:800;font-size:.88rem;max-width:calc(100% - 32px)}
+#specBar span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.field{display:flex;gap:8px}
+.field input{flex:1;min-width:0;font:inherit;font-weight:700;font-size:.9rem;padding:7px 10px;border:1.5px solid var(--rule);border-radius:10px;color:var(--ink);background:#fff}
+@media (max-width:1100px){#rankCard{display:none}}
+@media (max-width:760px){
+  #hudTop{left:var(--gl);transform:none;padding:6px 12px 6px 6px;gap:10px}
+  .lvBadge{width:38px;height:38px;font-size:1.1rem}
+  .lvText{min-width:84px}
+  .clock{padding-left:10px}.clock .t{font-size:1.2rem}
+  #stats{top:calc(var(--gt) + 64px);left:var(--gl);right:auto;width:auto;padding:8px 12px;gap:2px;font-size:.85rem}
+  #stats .row .v{font-size:.9rem}
+  #stats .hideS{display:none}
+  .area{display:none}
+  #wallet{bottom:calc(var(--gb) + 74px)}
+  .money{padding:8px 12px 8px 8px;gap:10px}.coin{width:40px;height:40px;font-size:1.15rem}.money .m{font-size:1.35rem}
+  #dock{left:var(--gl);right:var(--gr);transform:none;justify-content:space-between;gap:6px;padding:6px}
+  .dbtn{flex:1;width:auto;height:58px;font-size:.78rem}.dbtn svg{width:22px;height:22px}
+  #zoom{bottom:calc(var(--gb) + 80px)}
+  #toast{top:calc(var(--gt) + 150px)}
+  #notice{top:calc(var(--gt) + 64px);left:var(--gl);right:var(--gr);transform:none;max-width:none;border-radius:14px;font-size:.85rem}
+  #panel{left:var(--gl);right:var(--gr);width:auto;max-width:none;top:auto;bottom:calc(var(--gb) + 76px);max-height:58%}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+
+<canvas id="cv" aria-label="川島都市圏の路線図"></canvas>
+
+<div id="hudTop" class="card">
+  <div class="lvBadge num" id="lvNum">1</div>
+  <div class="lvText"><b>レベル <span id="lvLabel">1</span><span id="lvPct" class="num">0%</span></b><div class="bar"><i id="lvBar"></i></div></div>
+  <div class="clock"><span class="t num" id="clk">06:00</span><span class="d" id="date">10月28日(水)・川島</span></div>
+</div>
+
+<div id="stats" class="card">
+  <div class="row"><span class="k"><i style="background:#2DA44E"></i>総収益</span><span class="v num" id="sTotal">0円</span></div>
+  <div class="row"><span class="k"><i style="background:#2F7BE5"></i>乗客数</span><span class="v num" id="sRiders">0人</span></div>
+  <div class="row hideS"><span class="k"><i style="background:#F0A400"></i>観光客数</span><span class="v num" id="sTour">0人</span></div>
+  <div class="row"><span class="k"><i style="background:#F4B400"></i>満足度</span><span class="v num" id="sSat">100%</span></div>
+  <div id="satBar" class="hideS"><i></i></div>
+</div>
+
+<div id="wallet">
+  <div class="card area"><span class="flag" aria-hidden="true"></span><div><small>エリア・メイン</small><b>川島都市圏</b></div></div>
+  <div class="card money"><div class="coin">¥</div><div><div class="m num" id="money">30,000円</div><span class="r num" id="rate">+0円/秒</span></div></div>
+</div>
+
+<nav id="dock" class="card">
+  <button class="dbtn" style="--c:var(--b-line)" data-view="lines"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18 L10 8 L14 14 L20 5"/><circle cx="4" cy="18" r="2" fill="#fff"/><circle cx="20" cy="5" r="2" fill="#fff"/></svg>路線</button>
+  <button class="dbtn" style="--c:var(--b-car)" data-view="cars"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.2" stroke-linejoin="round"><rect x="5" y="3" width="14" height="15" rx="4"/><path d="M5 10h14"/><circle cx="9" cy="14" r="1.2" fill="#fff"/><circle cx="15" cy="14" r="1.2" fill="#fff"/><path d="M8 18l-2 3M16 18l2 3" stroke-linecap="round"/></svg>車両</button>
+  <button class="dbtn" style="--c:var(--b-sight)" data-view="sights"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2l2.9 6.3 6.9.7-5.2 4.6 1.5 6.8L12 17l-6.1 3.4 1.5-6.8L2.2 9l6.9-.7z"/></svg>名所</button>
+  <button class="dbtn" style="--c:var(--b-bank)" data-view="bank"><svg viewBox="0 0 24 24" fill="#fff"><path d="M12 2 2 7v2h20V7z"/><rect x="4" y="10" width="3" height="8"/><rect x="10.5" y="10" width="3" height="8"/><rect x="17" y="10" width="3" height="8"/><rect x="2" y="19" width="20" height="3"/></svg>銀行</button>
+  <button class="dbtn" style="--c:#E0457B" data-view="rank"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 3h10v3a5 5 0 0 1-10 0z"/><path d="M5 4H3v2a4 4 0 0 0 4 4M19 4h2v2a4 4 0 0 1-4 4" fill="none" stroke="#fff" stroke-width="2"/><rect x="10" y="12" width="4" height="5"/><rect x="7" y="18" width="10" height="3" rx="1"/></svg>順位</button>
+  <button class="dbtn" style="--c:var(--b-set)" data-view="settings"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.4"><circle cx="12" cy="12" r="3.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1 7 17M17 7l2.1-2.1" stroke-linecap="round"/></svg>設定</button>
+</nav>
+
+<div id="zoom">
+  <button class="zb s" id="zFit" aria-pressed="false" aria-label="全路線を表示">全路線</button>
+  <button class="zb" id="zIn" aria-label="拡大">+</button>
+  <button class="zb" id="zOut" aria-label="縮小">−</button>
+</div>
+
+<div id="rankCard" class="card"><h4>オンラインランキング<span class="on" id="onlineChip" hidden></span></h4><div id="rankMini"></div><button class="watch" id="rankAll">ランキングを見る・見学する</button></div>
+<div id="bdTip" hidden></div>
+<div id="notice" role="status" hidden><span class="tro"><svg viewBox="0 0 24 24" fill="#fff"><path d="M7 3h10v3a5 5 0 0 1-10 0z"/><rect x="10" y="12" width="4" height="5"/><rect x="7" y="18" width="10" height="3" rx="1"/></svg></span><span id="noticeText"></span></div>
+<div id="specBar" class="card" hidden><span id="specText"></span><button class="buy alt" id="specBack">自分の路線に戻る</button></div>
+<aside id="panel" class="card" hidden>
+  <div class="ph"><h3 id="pTitle">路線</h3><button id="pClose" aria-label="閉じる">×</button></div>
+  <div id="pBody"></div>
+</aside>
+<div id="toast" role="status"></div>
+
+<script>
+/* =================================================================
+   川島都市圏の地図データ（川島都市圏路線図の主要路線をもとに配置）
+   ここを書き換えると路線や駅を変えられます。座標は 2557 × 1649 の地図上
+   ================================================================= */
+const W = 2557, H = 1649;
+// 駅 [x, y, 人口規模1〜8]
+const ST = {
+  '新浦高':[323,116,2],
+  '河原':[375,116,2],
+  '千羽山':[428,116,2],
+  '洲河崎':[499,116,3],
+  '門前':[647,179,2],
+  '腰ヶ原':[550,285,5],
+  '緩が浜':[550,88,2],
+  '鈴宮':[550,136,2],
+  '福川工業団地':[550,179,2],
+  '水把':[550,222,2],
+  '宇美崎':[144,280,2],
+  '旭':[181,280,2],
+  '東船戸':[217,280,2],
+  '鷹野':[261,280,2],
+  '望町':[295,280,2],
+  '空阿':[332,280,2],
+  '小麦山':[368,280,2],
+  '吉見':[404,280,2],
+  '延土川':[443,280,2],
+  '啄木島':[764,280,2],
+  '明城':[286,385,2],
+  '菅府良':[306,366,2],
+  '禾久保':[326,345,2],
+  '大石':[346,326,2],
+  '新大石':[402,310,2],
+  '弐尽':[453,310,2],
+  '平上':[485,373,2],
+  '屋敷原':[485,410,2],
+  '雛社':[485,448,2],
+  '笹崎':[485,486,2],
+  '清水夕霧':[360,410,2],
+  '仁山':[679,410,2],
+  '南夕霧':[813,410,2],
+  '北大神本町':[1203,80,4],
+  '北大神市':[1117,80,2],
+  '城河原海岸':[974,146,2],
+  '今城神社':[974,199,2],
+  '紅が咲':[974,280,4],
+  '上今城':[974,335,2],
+  '今城':[974,372,2],
+  '今城学園前':[974,410,4],
+  '角巻橋':[974,448,2],
+  '航空公園':[974,485,2],
+  '大神湖':[972,531,4],
+  '仁が谷':[871,280,2],
+  '大戸':[1093,280,2],
+  '市原':[1167,280,2],
+  '唐林':[1231,280,3],
+  '浦田':[1310,280,2],
+  '紅垂':[1368,245,2],
+  '義原':[1414,200,2],
+  '筒地上':[1455,159,2],
+  '蕗':[1497,118,2],
+  '波止海岸':[1562,80,3],
+  '大村ビーチ前':[1601,80,2],
+  '雑浜':[1638,80,2],
+  '峰':[1673,80,2],
+  '中市橋':[1709,80,2],
+  '白北西町':[1268,80,2],
+  '山水':[1324,80,2],
+  '浜の下':[1375,80,2],
+  '西波止':[1427,80,2],
+  '西大町':[1643,256,2],
+  '伊和原':[1643,280,2],
+  '畑戸':[1643,303,2],
+  '錦平':[1643,327,2],
+  '鶴沢':[1643,351,2],
+  '棚俣':[1643,376,2],
+  '武見':[1643,401,2],
+  '時村':[1643,427,2],
+  '稲が原':[1643,454,2],
+  '荻里':[1643,480,2],
+  '琴原':[1643,506,2],
+  '桜大町':[1686,232,2],
+  '間沼':[1721,232,2],
+  '西佐奈':[1747,80,2],
+  '佐奈海岸':[1790,80,2],
+  '布瀬山北':[1833,80,2],
+  '布瀬山':[1869,80,2],
+  '大賀':[1903,80,2],
+  '山越':[1939,80,2],
+  '下吉田':[1975,80,2],
+  '不全':[2011,80,2],
+  '俵原':[2047,80,2],
+  '羽山西':[2086,80,2],
+  '羽山':[2124,80,2],
+  '旧改':[2162,80,2],
+  '上ヶ丘':[2200,80,2],
+  '神楽橋':[2240,80,2],
+  '北宮野':[2267,107,2],
+  '宮野上':[2297,144,2],
+  '下港':[2347,232,6],
+  '星影学園前':[1754,232,2],
+  '篠倉不動':[1788,232,2],
+  '星影':[1832,232,3],
+  '星影中郷':[1879,232,2],
+  '元田':[1913,232,2],
+  '竹寺口':[1949,232,2],
+  '結松':[1986,232,2],
+  '東結松':[2023,232,2],
+  '春沢':[2061,232,2],
+  '下港美術大学入口':[2101,232,2],
+  '鳥の宮':[2137,232,2],
+  '東雲中町':[2175,232,2],
+  '大鳩台':[2212,232,2],
+  '上豊':[2249,232,2],
+  '西下港':[2287,232,2],
+  '下港公園':[2337,309,3],
+  '波引谷':[2337,382,2],
+  'すみれ台':[2337,455,2],
+  '花娘川':[2264,505,2],
+  '太良':[2206,505,2],
+  '九軒茶屋':[2113,505,3],
+  '豊泉温泉':[2029,505,3],
+  '茶屋桜町':[2113,428,2],
+  '日築城':[491,536,5],
+  '西里新町':[491,627,3],
+  '阿見坂':[485,759,3],
+  '川島望通':[346,973,5],
+  '東空和':[500,585,2],
+  '妙雲寺':[500,673,2],
+  '保立坂':[500,712,2],
+  '川島工大前':[414,869,2],
+  '松屋町':[353,1040,2],
+  '田平':[407,627,2],
+  '西里':[628,627,2],
+  '島谷':[728,627,2],
+  '松石':[758,694,2],
+  '金が山':[765,806,4],
+  '川島空港第1ターミナル':[335,641,3],
+  '国立医療センター':[471,864,2],
+  '柳元町':[471,909,2],
+  '川島中央':[471,974,3],
+  '京川':[471,1024,2],
+  '京日本橋':[471,1051,2],
+  '千京門':[471,1091,4],
+  '余木':[824,756,2],
+  '神谷町':[771,886,2],
+  '浅賀台':[771,965,2],
+  '御影橋':[771,1035,2],
+  '浅賀':[825,978,2],
+  '桜小坂御影口':[798,1003,2],
+  '南小坂':[798,1070,2],
+  '新大神湖':[1046,592,2],
+  '井川崎':[1103,592,2],
+  '井川':[1162,592,2],
+  '井川湯元':[1230,592,4],
+  '千波湖北':[1379,592,2],
+  '白雲下町':[1481,592,2],
+  '雲山温泉':[1576,587,3],
+  '忍技村':[1665,592,2],
+  '元宿':[1643,532,2],
+  '常田':[960,627,2],
+  '尚狭川':[960,666,2],
+  '梶ケ丘':[960,704,2],
+  '梶平サーキット前':[918,756,2],
+  '宇嘉台':[872,756,2],
+  '尾賀公園':[825,756,2],
+  '千波湖':[1230,654,3],
+  '日生川口':[1230,711,2],
+  '和賀岸':[1230,775,2],
+  '千波岩原':[1230,835,2],
+  '原石町':[1169,894,4],
+  '鹿木':[1059,894,2],
+  'さつきが丘':[958,894,2],
+  '小郷':[872,937,2],
+  '新倉竹':[872,1054,2],
+  '八沢田':[1220,930,2],
+  '薬師永良':[1238,967,2],
+  '南薬師':[1238,1013,2],
+  '西瀬川北口':[858,967,2],
+  '芦野':[949,967,2],
+  '加奈町':[1007,967,2],
+  '浜沢町':[1069,967,2],
+  '川瀬町':[1130,967,2],
+  '永久佐':[1282,967,2],
+  '稲生':[1342,967,2],
+  '兎野山':[1403,967,2],
+  '古野間':[1463,967,2],
+  '羽竜':[1516,967,3],
+  '能見市':[1573,967,4],
+  '保野':[1660,967,2],
+  '白能谷温泉':[1573,802,3],
+  '麓間山':[1573,837,2],
+  '葉貫':[1573,870,2],
+  '麓野屋':[1573,903,2],
+  '菊能台':[1516,1010,2],
+  '白雲南':[1516,1041,2],
+  '徳富':[1969,552,2],
+  '飯洲':[1969,606,2],
+  '七日市':[1981,681,5],
+  '南七日市':[1969,817,2],
+  '藤澤':[1969,888,2],
+  '豊麦':[1969,961,2],
+  '三秦':[1969,1039,2],
+  '今芳川':[1754,861,2],
+  '柚野町':[1779,818,2],
+  '川幡町':[1802,777,2],
+  '西七市':[1824,739,2],
+  '隈川':[2104,866,2],
+  '吾妻三条':[2104,927,2],
+  '柏町':[2104,984,2],
+  '松任':[2104,1038,2],
+  '東島':[2295,732,6],
+  '東島栄町':[2289,879,2],
+  '芝向':[2289,984,2],
+  '本広岡':[2289,1090,2],
+  '鷺城':[2161,564,2],
+  '新東島':[2237,606,2],
+  '東ノ町':[2453,633,2],
+  '東川':[2364,672,2],
+  '東美奈丘':[2220,672,2],
+  '美奈丘ニュータウン':[2152,672,2],
+  '川島':[458,1269,8],
+  '西町銀座':[335,1184,4],
+  '中上川':[594,1257,3],
+  '奥重':[699,1257,3],
+  '東奥重':[783,1298,2],
+  '北倉竹':[777,1099,4],
+  '小坂':[771,1072,2],
+  '新奥重':[642,1279,2],
+  '海響通':[578,1367,2],
+  '中上川団地':[658,1378,2],
+  '芝浦町':[744,1415,3],
+  '鳶島新都心':[130,1420,3],
+  '夢みなと':[213,1420,2],
+  '水郷山':[289,1420,2],
+  '川島港旅客ターミナル':[401,1420,2],
+  '川島ふ頭':[471,1417,3],
+  '中上川水再生センター':[599,1420,2],
+  '中上浜':[673,1420,2],
+  '浮端町':[794,1412,2],
+  '倉竹':[817,1265,5],
+  '久原塚':[984,1265,2],
+  '利賀浦':[1130,1265,2],
+  '糸里':[1238,1265,5],
+  '津和':[1310,1265,2],
+  'しきめ':[1376,1265,2],
+  '西海王':[1438,1265,2],
+  '海王':[1517,1265,4],
+  '東海王':[1578,1265,2],
+  '時佐山':[1614,1265,2],
+  '海王ふれあいパーク':[1649,1265,2],
+  '海王大学':[1683,1265,2],
+  '月見橋':[883,1250,2],
+  '新遠石':[932,1250,2],
+  '遠石海岸':[1034,1250,2],
+  '日和土手':[1082,1250,2],
+  '桃乃森':[1185,1250,2],
+  '広江':[1238,1120,2],
+  '北糸里':[1238,1182,2],
+  '糸里港':[1238,1424,2],
+  '篝火島':[877,1133,4],
+  '板橋':[871,1188,2],
+  '文禅寺':[1516,1075,2],
+  '北海王':[1516,1138,2],
+  '平山':[1516,1184,2],
+  '須賀浦':[1777,1266,5],
+  '内浦':[1893,1212,3],
+  '矢幡':[1969,1121,2],
+  '北八重':[1724,1371,2],
+  '八重川':[1724,1412,2],
+  '中藤井':[1724,1451,2],
+  '有電会沢':[1724,1491,2],
+  '小栗坂':[1724,1532,2],
+  '十全':[1769,1569,2],
+  '土手口':[1850,1569,2],
+  '高馬ノ宮':[1882,1569,2],
+  '西涼瀬':[1914,1569,2],
+  '本涼瀬':[1947,1569,2],
+  '飛龍原':[1980,1569,2],
+  '蹄光寺坂':[2013,1569,2],
+  '有田紗川':[2046,1569,2],
+  '有電高柳':[2078,1569,2],
+  '深目白宮':[2110,1569,2],
+  '向日町':[2143,1569,2],
+  '有田新都心':[2177,1569,2],
+  '有田':[2222,1569,4],
+  '有電内浦':[1911,1283,2],
+  '想掛':[1988,1283,2],
+  '東想掛':[2056,1283,2],
+  '会浜':[2131,1283,2],
+  '清光海岸':[2203,1283,2],
+  '桜地':[2286,1210,4],
+  '櫨屋敷':[2104,1093,2],
+  '九蘭野':[2104,1148,2],
+  '東桜地':[2339,1336,2],
+  '高見浜':[2467,1335,2],
+  '日次浜':[58,582,2],
+  '日次小賀':[58,642,2],
+  '波良':[58,702,2],
+  '中浦':[121,780,3],
+  '日次川岸':[187,780,2],
+  '日次山石':[255,825,2],
+  '北波良':[121,682,2],
+  '潮急波良':[121,712,2],
+  '北中浦':[121,742,2],
+  '雪峰湖':[174,746,2],
+  '喜光地発電所':[214,726,2],
+  '喜光地':[257,710,3],
+  '五文村':[338,710,2],
+  '山石':[366,793,2],
+  '伊保':[366,858,2],
+  '辻部':[176,968,2],
+  '尊寺文化公園':[280,968,2],
+  '城北':[418,968,2],
+  '華咲町':[550,968,2],
+  '佐雅野':[66,992,3],
+  '川大前':[620,968,2],
+  '江東町':[702,968,2],
+  '川島大学':[620,981,2],
+  '石門':[366,1014,2],
+  '徳梁':[289,1092,2],
+  'モーゼシティ':[289,1202,2],
+  '院町':[324,1290,2],
+  '川島今街':[550,1349,2],
+  '西浦':[329,1412,2],
+  '西町浦宿':[410,1092,2],
+  '城東':[532,1092,2],
+  '中上川親水公園':[592,1092,2],
+  '政府庁舎':[652,1092,2],
+  '梁居寺':[712,1092,2],
+  '緑が浜':[232,1099,2],
+  '西町岬':[270,1104,2],
+  '城川芝浦':[652,1371,2],
+  '城川倉竹':[718,1371,2],
+  '欅が丘':[988,1043,2],
+  '千波川':[1060,1043,2],
+  '東広江':[1256,1046,3],
+  '光陽街':[826,1042,2],
+  '西広江':[1062,1095,2],
+  '東倉':[1008,1149,2],
+  '遠石新町':[939,1232,2],
+  '新篝火島':[912,1174,2],
+  '穂方':[954,1174,2],
+  '三佐':[988,1174,2],
+  '鍬が浜':[1020,1174,2],
+  '美波辰巳温泉':[1054,1174,2],
+  '美波辰巳':[1090,1174,2],
+  '竜蔵寺':[1129,1159,2],
+  '三倉':[1157,1131,2],
+  '金城':[1318,1130,3],
+  'つわの大崎':[1446,1160,2],
+  '城戸三が谷町':[1450,1181,2],
+  '平山新町':[1454,1198,2],
+  '海王新地':[1458,1223,2],
+  '松森川':[1618,1118,2],
+  '新須賀浦':[1720,1165,3],
+  '緑福町':[2076,727,2],
+  '京日大前':[2140,727,2],
+  '南坂':[2208,727,2],
+  '東七日市':[2035,606,2],
+  '筑丘':[2109,606,2],
+  '北漢山':[2175,606,2],
+  '東島河原':[2302,671,2],
+  '鳶島':[122,1104,3],
+  '新鳶島':[180,1104,2],
+  '火宮参道':[65,1063,2],
+  '北鳶島':[122,1022,2],
+  '安見':[829,1371,2],
+  '葛海中央':[909,1371,2],
+  '城川遠石':[996,1371,2],
+  '利賀浦海浜公園':[1085,1371,2],
+  '島見が丘':[1168,1371,2],
+  '芝浦':[736,1460,2],
+  '鴫野華瀬':[795,1466,2],
+  '早潮':[844,1499,2],
+  '春日野':[844,1522,2],
+  '中樺':[844,1546,2],
+  '宮町':[844,1569,2],
+  '魚溜':[844,1595,2],
+  '堺雁山':[859,1167,2],
+  '東倉竹四丁目':[828,1182,2],
+  '倉竹北':[816,1210,2],
+  '南倉竹':[816,1341,2],
+  '川島医大分院前':[769,1432,2],
+  '中上浜港':[704,1432,2],
+  'KR想掛':[1988,1266,2],
+  '美山':[2081,1266,2],
+  '南桜地':[2175,1266,2],
+  '桜地温泉':[2359,1362,2],
+  '新野':[2359,1427,2],
+  '新佐奈':[1826,33,2],
+  '弥芝勝川':[1879,13,2],
+  '淡島':[1911,6,2],
+  '豊浜':[1945,6,2],
+  '鹿加部':[1975,6,2],
+  '浅海酒川':[2008,6,2],
+  '酒川町':[2040,6,2],
+  '大戸坂水':[2073,6,2],
+  '浜平':[2105,6,2],
+  '西宮酒':[2140,6,2],
+  '宮酒本町':[2175,6,3],
+  '宮浜港':[2250,6,3],
+  '梓栗町':[1922,21,2],
+  '茅波':[1958,21,2],
+  '栖垣':[2073,-45,2],
+  '上ヶ丘(沖)':[2206,38,2],
+  '浜郷三丁目':[2370,248,2],
+  '枚浜町':[2370,267,2],
+  '三田元町':[2370,289,2],
+  '市役所前':[2370,329,2],
+  '栄三丁目':[2356,349,2],
+  '小額原':[2316,349,2],
+  '八丸':[2287,349,2],
+  '西八丸':[2260,349,2],
+  '龍田車庫前':[2231,349,2]
+};
+// 計画路線（駅を順番に並べる。loop:true で環状線）
+const LINES = [
+  { name:'島浜線', color:'#1E7FDB', stops:'洲河崎 門前 腰ヶ原 平上 屋敷原 雛社 笹崎 日築城 西里新町 阿見坂 川島望通 西町銀座 川島 中上川 奥重 倉竹 久原塚 利賀浦 糸里 津和 しきめ 西海王 海王 東海王 時佐山 海王ふれあいパーク 海王大学 須賀浦 内浦 矢幡 三秦 豊麦 藤澤 南七日市 七日市 飯洲 徳富 豊泉温泉 九軒茶屋 太良 花娘川 すみれ台 波引谷 下港公園 下港'.split(' ') },
+  { name:'島浜緩行線', color:'#29B6F6', stops:'日築城 東空和 西里新町 妙雲寺 保立坂 阿見坂 川島工大前 川島望通 松屋町 西町銀座 川島 中上川 奥重 倉竹 月見橋 新遠石 久原塚 遠石海岸 日和土手 利賀浦 桃乃森 糸里'.split(' ') },
+  { name:'海山線', color:'#1565C0', stops:'新浦高 河原 千羽山 洲河崎'.split(' ') },
+  { name:'船戸線', color:'#3D8BE0', stops:'宇美崎 旭 東船戸 鷹野 望町 空阿 小麦山 吉見 延土川 腰ヶ原 啄木島 仁が谷 紅が咲 大戸 市原 唐林'.split(' ') },
+  { name:'下林線', color:'#1FA5B5', stops:'唐林 浦田 紅垂 義原 筒地上 蕗 波止海岸 大村ビーチ前 雑浜 峰 中市橋 西佐奈 佐奈海岸 布瀬山北 布瀬山 大賀 山越 下吉田 不全 俵原 羽山西 羽山 旧改 上ヶ丘 神楽橋 北宮野 宮野上 下港'.split(' ') },
+  { name:'北波線', color:'#2BB3A3', stops:'北大神本町 白北西町 山水 浜の下 西波止 波止海岸'.split(' ') },
+  { name:'今城線', color:'#8BC34A', stops:'北大神本町 北大神市 城河原海岸 今城神社 紅が咲 上今城 今城 今城学園前 角巻橋 航空公園 大神湖'.split(' ') },
+  { name:'井川高速線', color:'#43A047', stops:'大神湖 新大神湖 井川崎 井川 井川湯元 千波湖北 白雲下町 雲山温泉 忍技村 七日市 東島'.split(' ') },
+  { name:'星影線', color:'#CDB13A', stops:'下港 西下港 上豊 大鳩台 東雲中町 鳥の宮 下港美術大学入口 春沢 東結松 結松 竹寺口 元田 星影中郷 星影 篠倉不動 星影学園前 間沼 桜大町 西大町 伊和原 畑戸 錦平 鶴沢 棚俣 武見 時村 稲が原 荻里 琴原 元宿 雲山温泉'.split(' ') },
+  { name:'夕霧本線', color:'#E0A040', stops:'清水夕霧 屋敷原 仁山 南夕霧 今城学園前'.split(' ') },
+  { name:'臨海線', color:'#F57C00', stops:'緩が浜 鈴宮 福川工業団地 水把 腰ヶ原'.split(' ') },
+  { name:'日原線', color:'#FF9800', stops:'明城 菅府良 禾久保 大石 新大石 弐尽 腰ヶ原'.split(' ') },
+  { name:'川金線', color:'#9CCC65', stops:'田平 西里新町 西里 島谷 松石 金が山'.split(' ') },
+  { name:'大神湖線', color:'#1A3A7A', stops:'大神湖 常田 尚狭川 梶ケ丘 梶平サーキット前 宇嘉台 尾賀公園 余木 金が山 神谷町 浅賀台 御影橋 小坂 北倉竹 新奥重 川島'.split(' ') },
+  { name:'千波線', color:'#3AAA80', stops:'井川湯元 千波湖 日生川口 和賀岸 千波岩原 原石町 鹿木 さつきが丘 小郷 新倉竹 篝火島 板橋 倉竹 奥重 中上川 川島'.split(' ') },
+  { name:'川島線', color:'#7B2045', stops:'北倉竹 南小坂 桜小坂御影口 浅賀 西瀬川北口 芦野 加奈町 浜沢町 川瀬町 薬師永良 永久佐 稲生 兎野山 古野間 羽竜 能見市 保野 今芳川 柚野町 川幡町 西七市 七日市 隈川 吾妻三条 柏町 松任 櫨屋敷 九蘭野 桜地'.split(' ') },
+  { name:'糸里線', color:'#A23E6A', stops:'原石町 八沢田 薬師永良 南薬師 広江 北糸里 糸里 糸里港'.split(' ') },
+  { name:'山麓線', color:'#C05A8A', stops:'白能谷温泉 麓間山 葉貫 麓野屋 能見市'.split(' ') },
+  { name:'海竜線', color:'#E57373', stops:'羽竜 菊能台 白雲南 文禅寺 北海王 平山 海王'.split(' ') },
+  { name:'京北本線', color:'#4A9A8A', stops:'茶屋桜町 九軒茶屋 鷺城 新東島 東島'.split(' ') },
+  { name:'美奈丘急行本線', color:'#9C4DCC', stops:'下港 東ノ町 東川 東美奈丘 美奈丘ニュータウン 七日市'.split(' ') },
+  { name:'東島線', color:'#40C9C0', stops:'東島 東島栄町 芝向 本広岡 桜地 東桜地 高見浜'.split(' ') },
+  { name:'有田本線', color:'#5BC8DC', stops:'有田 有田新都心 向日町 深目白宮 有電高柳 有田紗川 蹄光寺坂 飛龍原 本涼瀬 西涼瀬 高馬ノ宮 土手口 十全 小栗坂 有電会沢 中藤井 八重川 北八重 須賀浦 有電内浦 想掛 東想掛 会浜 清光海岸 桜地'.split(' ') },
+  { name:'空港線', color:'#7CB342', stops:'川島空港第1ターミナル 保立坂 阿見坂 国立医療センター 柳元町 川島中央 京川 京日本橋 千京門 川島 海響通 中上川団地 芝浦町'.split(' ') },
+  { name:'臨港線', color:'#3A6FB5', stops:'鳶島新都心 夢みなと 水郷山 川島港旅客ターミナル 川島ふ頭 中上川水再生センター 中上浜 芝浦町 浮端町 東奥重 北倉竹'.split(' ') },
+  { name:'川南線', color:'#2E5A92', stops:'川島望通 川島中央 川島大学 御影橋 光陽街 新倉竹 欅が丘 千波川 東広江'.split(' ') },
+  { name:'城北線', color:'#E8457A', stops:'鳶島 北鳶島 辻部 尊寺文化公園 川島望通 城北 川島中央 華咲町 川大前 江東町 浅賀台'.split(' ') },
+  { name:'中央線', color:'#F39800', stops:'中浦 雪峰湖 喜光地発電所 喜光地 五文村 山石 伊保 川島望通 石門 松屋町 徳梁 モーゼシティ 院町 川島 川島今街 川島ふ頭 西浦'.split(' ') },
+  { name:'千京門線', color:'#5DB8B0', stops:'緑が浜 徳梁 西町浦宿 千京門 城東 中上川親水公園 政府庁舎 梁居寺 北倉竹'.split(' ') },
+  { name:'日次線', color:'#4CA785', stops:'日次浜 日次小賀 波良 中浦 日次川岸 日次山石 川島望通 松屋町 西町銀座 川島'.split(' ') },
+  { name:'北波良線', color:'#E53950', stops:'北波良 潮急波良 北中浦 中浦'.split(' ') },
+  { name:'佐川本線', color:'#253C80', stops:'佐雅野 火宮参道 鳶島 新鳶島 緑が浜 西町岬 西町銀座 川島'.split(' ') },
+  { name:'H-MRT', color:'#E8C000', stops:'東広江 西広江 東倉 遠石新町 倉竹'.split(' ') },
+  { name:'辰巳線', color:'#2F8296', stops:'南小坂 新篝火島 穂方 三佐 鍬が浜 美波辰巳温泉 美波辰巳 竜蔵寺 三倉 広江 金城'.split(' ') },
+  { name:'高速線', color:'#3C93AA', stops:'金城 北海王 松森川 新須賀浦'.split(' ') },
+  { name:'海王線', color:'#2A7280', stops:'金城 つわの大崎 城戸三が谷町 平山新町 海王新地 海王'.split(' ') },
+  { name:'城川本線', color:'#2E8B57', stops:'城川芝浦 城川倉竹 安見 葛海中央 城川遠石 利賀浦海浜公園 島見が丘 糸里 金城'.split(' ') },
+  { name:'倉竹線', color:'#E86070', stops:'堺雁山 東倉竹四丁目 倉竹北 倉竹 南倉竹 川島医大分院前 中上浜港'.split(' ') },
+  { name:'羽渚本線', color:'#3FB8D8', stops:'芝浦町 芝浦 鴫野華瀬 早潮 春日野 中樺 宮町 魚溜'.split(' ') },
+  { name:'七日市線', color:'#1E88E5', stops:'七日市 東七日市 筑丘 北漢山 新東島 東島河原 東島'.split(' ') },
+  { name:'東島緩行線', color:'#8A7F5A', stops:'七日市 緑福町 京日大前 南坂 東島'.split(' ') },
+  { name:'有東線', color:'#1565C0', stops:'須賀浦 KR想掛 美山 南桜地 桜地温泉 新野'.split(' ') },
+  { name:'沖津線', color:'#2E7360', stops:'佐奈海岸 新佐奈 弥芝勝川 淡島 豊浜 鹿加部 浅海酒川 酒川町 大戸坂水 浜平 西宮酒 宮酒本町 宮浜港'.split(' ') },
+  { name:'沖津線茅波支線', color:'#5FA08A', stops:'弥芝勝川 梓栗町 茅波'.split(' ') },
+  { name:'沖津線栖垣支線', color:'#45A07E', stops:'大戸坂水 栖垣'.split(' ') },
+  { name:'宮浜港線', color:'#3F7F6A', stops:'宮酒本町 上ヶ丘(沖) 神楽橋 北宮野'.split(' ') },
+  { name:'星影線八丸支線', color:'#D8C040', stops:'下港 浜郷三丁目 枚浜町 三田元町 下港公園 市役所前 栄三丁目 小額原 八丸 西八丸 龍田車庫前'.split(' ') }
+];
+// 名所（観光客を呼ぶ）
+const SIGHTS = [
+  { name:'雲山温泉', st:'雲山温泉', x:1598, y:563, cost:60000, tour:3 },
+  { name:'白能谷温泉', st:'白能谷温泉', x:1595, y:778, cost:40000, tour:2 },
+  { name:'豊泉温泉', st:'豊泉温泉', x:2051, y:481, cost:45000, tour:2 },
+  { name:'航空公園', st:'航空公園', x:996, y:461, cost:30000, tour:1.5 },
+  { name:'下港美術大学', st:'下港美術大学入口', x:2123, y:208, cost:50000, tour:1.5 },
+  { name:'海王ふれあいパーク', st:'海王ふれあいパーク', x:1671, y:1241, cost:90000, tour:3 },
+  { name:'梶平サーキット', st:'梶平サーキット前', x:940, y:732, cost:150000, tour:4 },
+  { name:'川島港クルーズ', st:'川島港旅客ターミナル', x:423, y:1396, cost:200000, tour:4 },
+  { name:'川島空港', st:'川島空港第1ターミナル', x:357, y:617, cost:600000, tour:10 },
+  { name:'匿名博物館', st:'上ヶ丘', x:2200, y:112, cost:80000, tour:2.5 }
+];
+// 名所の経済効果 [建設費, 観光収益(円/秒), 全路線の収益ボーナス(%)]
+const SIGHT_ECON = {
+  '航空公園':[500000,15,1], '白能谷温泉':[800000,25,1.5], '豊泉温泉':[900000,30,1.5], '下港美術大学':[1000000,30,2],
+  '雲山温泉':[1200000,40,2], '匿名博物館':[1600000,50,2.5], '海王ふれあいパーク':[1800000,60,3],
+  '梶平サーキット':[3000000,100,4], '川島港クルーズ':[4000000,130,5], '川島空港':[12000000,400,8],
+};
+for (const s of SIGHTS){ const e = SIGHT_ECON[s.name]; if (e){ s.cost = e[0]; s.inc = e[1]; s.bonus = e[2]; } else { s.cost *= 20; s.inc = 0; s.bonus = 0; } }
+const RIVER = [], SEA = [], PARK = null, LABELS = [];
+
+/* ================= ゲームバランス ================= */
+const LEVELS = [0, 20e3, 80e3, 250e3, 700e3, 2e6, 6e6, 20e6, 60e6, 2e8];
+const HOURS = [.3,.25,.2,.2,.3,.5,.9,1.6,1.8,1.4,1,1,1.1,1,1,1.05,1.2,1.5,1.6,1.3,1,.85,.6,.4];
+const TRAIN_CAP = 1.2, KEY = 'kawashima-tycoon-v1';
+const WEEK = ['日','月','火','水','木','金','土'];
+const BASE_DATE = new Date(2026, 9, 28);
+
+const $ = id => document.getElementById(id);
+const yen = n => Math.floor(n).toLocaleString('ja-JP') + '円';
+const ppl = n => Math.floor(n).toLocaleString('ja-JP') + '人';
+
+/* ================= 状態と保存 ================= */
+function fresh(){ return { v:1, money:10000, total:0, riders:0, tourists:0, built:LINES.map(()=>[]), trains:LINES.map(()=>0),
+  sights:[], loan:0, min:360, saved:Date.now(), rate:0, lv:1, names:true, company:'' }; }
+function load(){ try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) return s; } catch(e){} return null; }
+function save(){ S.saved = Date.now(); S.rate = R.inc; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
+let S = load() || fresh();
+S.company = S.company || ''; S.stLv = S.stLv || {}; S.avgInc = S.avgInc || 0;
+S.tlv = LINES.map((L,i) => (S.tlv && S.tlv[i]) || 0); S.cond = LINES.map((L,i) => (S.cond && S.cond[i] != null) ? S.cond[i] : 100); S.built = LINES.map((L,i) => S.built[i] || []); S.trains = LINES.map((L,i) => S.trains[i] || 0);
+let R = { inc:0, rid:0, tou:0, sat:1, per:{}, dem:{} };
+
+/* ================= 路線の計算 ================= */
+const nSegs = li => LINES[li].loop ? LINES[li].stops.length : LINES[li].stops.length - 1;
+const ends = (li,i) => { const s = LINES[li].stops; return [s[i], s[(i+1) % s.length]]; };
+const pt = n => ({ x:ST[n][0], y:ST[n][1] });
+const cr = (o,p,q) => (p[0]-o[0])*(q[1]-o[1]) - (p[1]-o[1])*(q[0]-o[0]);
+function bridges(a,b){
+  const A=[ST[a][0],ST[a][1]], B=[ST[b][0],ST[b][1]]; let c=0;
+  for (let i=0;i<RIVER.length-1;i++){ const P=RIVER[i],Q=RIVER[i+1];
+    if ((cr(P,Q,A)>0)!==(cr(P,Q,B)>0) && (cr(A,B,P)>0)!==(cr(A,B,Q)>0)) c++; }
+  return c;
+}
+function segLen(li,i){ const [a,b]=ends(li,i); return Math.hypot(ST[a][0]-ST[b][0], ST[a][1]-ST[b][1]); }
+const totalBuilt = () => S.built.reduce((a,b) => a + b.length, 0);
+// 資産＝所持金＋これまでの投資額−借入
+const assets = () => Math.max(0, S.money + (S.invest || 0) - (S.loan || 0));
+const segKm = (li,i) => segLen(li,i) / 40;
+function costParts(li,i,n){
+  const nn = n ?? totalBuilt(), g = Math.pow(1.06, Math.min(nn,40)) * Math.pow(1.012, Math.max(0, nn-40));
+  const base = 1000 * g;                 // 主：持っている区間の数で上がる基本料金
+  const dist = segKm(li,i) * 400 * g;    // 距離料金：1kmあたり400円（基本料金と同じペースで上がる）
+  const extra = Math.min((base + dist) * 1.5, assets() * 0.03); // 資産の3%を上乗せ（最大1.5倍まで）
+  return { base, dist, extra };
+}
+function segCost(li,i,n){
+  const { base, dist, extra } = costParts(li,i,n), v = base + dist + extra;
+  return v < 10000 ? Math.round(v/10)*10 : Math.round(v/100)*100;
+}
+// 増発の値段：どの路線でも同じ基準。その路線の編成数で上がり（1編成ごとに25%）、資産の1%を上乗せ（最大で主と同額）
+const trainCost = li => { const base = 3000 * Math.pow(1.25, Math.max(0, S.trains[li]-1)), v = base + Math.min(base, assets()*0.01);
+  return v < 10000 ? Math.round(v/10)*10 : Math.round(v/100)*100; };
+// 駅のアップグレード：レベルが上がるほど乗客（需要）が増える
+const MAJOR = ['川島','下港','海王','七日市','東島'], ST_MAX = 5;
+const stLv = n => (S.stLv && S.stLv[n]) || 0;
+const stBoost = n => 1 + 0.4*stLv(n);
+const upCost = n => Math.round((MAJOR.includes(n) ? 700000 : 300000) * Math.pow(1.8, stLv(n)) / 1000) * 1000;
+// 列車のレベル（1レベルごとに収益+0.1%、最大100）と状態（時間で劣化、修理で回復）
+const TLV_MAX = 100;
+const tlvCost = li => Math.round(90000 * Math.pow(1.05, S.tlv[li]) / 1000) * 1000;
+const repairCost = li => Math.round((100 - S.cond[li]) * 60 * Math.max(1, S.trains[li]) / 100) * 100;
+const condFactor = li => 0.4 + 0.6 * S.cond[li] / 100;
+const lineInc = li => { const p = R.per[li]; return p ? Math.round(p.sv * p.fare * (1 + 0.1*R.sat) * (1 + (R.bonus||0))).toLocaleString('ja-JP') : '0'; };
+const maxTrains = li => S.built[li].length; // 1区間ごとに1編成まで
+function touches(li,i){
+  const [a,b] = ends(li,i);
+  return S.built[li].some(j => { const [c,d] = ends(li,j); return c===a||c===b||d===a||d===b; });
+}
+function buildState(li,i){
+  const L = LINES[li], cost = segCost(li,i);
+  if (S.built[li].includes(i)) return { ok:false, cost, why:'建設済み', done:true };
+  const lc = canConnect(li, i, S.built, isOpen);
+  if (lc) return { ok:false, cost, why:lc };
+  if (S.money < cost) return { ok:false, cost, why:'お金が足りません', money:true };
+  return { ok:true, cost };
+}
+// 開業区間をつながっている塊ごとに分ける（離れた区間も別々に運行）
+function linePaths(li){
+  const L = LINES[li], n = nSegs(li), b = new Set(S.built[li]), out = [];
+  if (!b.size) return out;
+  if (L.loop && b.size === n) return [{ names:[...L.stops], loop:true }];
+  for (let i=0;i<n;i++){
+    if (!b.has(i)) continue;
+    const prev = L.loop ? (i-1+n)%n : i-1;
+    if (prev >= 0 && b.has(prev)) continue; // 塊の先頭だけから数える
+    const names = [L.stops[i]]; let j = i;
+    while (b.has(j)){ names.push(L.stops[(j+1)%L.stops.length]); j = L.loop ? (j+1)%n : j+1; if (j===i) break; }
+    out.push({ names, loop:false });
+  }
+  return out;
+}
+// 駅ごとの開業路線を、建設状況が変わったときだけ計算し直す（毎フレームの重い計算を避ける）
+const _open = { ref:null, sig:'', map:new Map() };
+function openMap(){
+  const sig = S.built.map(b => b.length).join(',');
+  if (_open.ref === S.built && _open.sig === sig) return _open.map;
+  const m = new Map();
+  LINES.forEach((L,li) => { for (const n of lineStations(li)){ if (!m.has(n)) m.set(n, []); m.get(n).push(li); } });
+  _open.ref = S.built; _open.sig = sig; _open.map = m; return m;
+}
+const isOpen = name => openMap().has(name);
+// つながりのルール：その路線をすでに持っていれば、その路線の開業区間の端からしか伸ばせない。
+// まだ持っていない路線は、どの路線でも開業済みの駅から始められる（最初の1区間はどこでも可）。
+function canConnect(li, i, built, openFn){
+  const mine = built[li];
+  if (mine.length){
+    const [a,b] = ends(li,i);
+    const ok = mine.some(j => { const [c,d] = ends(li,j); return c===a || c===b || d===a || d===b; });
+    return ok ? '' : `${LINES[li].name}は開業済みの区間の端から延ばします`;
+  }
+  if (built.some(x => x.length) && !ends(li,i).some(openFn)) return '開業済みの駅につながる区間から建設します';
+  return '';
+}
+// 表示モード：ふだんは「開業済み＋その隣の駅まで」、全路線ボタンで全部表示
+let SHOW_ALL = false;
+const _vis = { key:'', seg:null, st:null };
+function visible(){
+  const m = openMap(), key = (SHOW_ALL || !m.size ? 'all' : _open.sig) + '|' + (_open.ref === S.built);
+  if (_vis.key === key && _vis.ref === S.built) return _vis;
+  const seg = new Set(), st = new Set(), all = SHOW_ALL || !m.size;
+  LINES.forEach((L,li) => { for (let i=0;i<nSegs(li);i++){ const [a,b] = ends(li,i);
+    if (all || S.built[li].includes(i) || m.has(a) || m.has(b)){ seg.add(li+':'+i); st.add(a); st.add(b); } } });
+  if (all) for (const n in ST) st.add(n);
+  Object.assign(_vis, { key, ref:S.built, seg, st, all });
+  return _vis;
+}
+const segVis = (li,i) => visible().seg.has(li+':'+i);
+const stVis = n => visible().st.has(n);
+const lineStations = li => [...new Set(linePaths(li).flatMap(p => p.names))];
+function stationLines(name, builtOnly){
+  return LINES.map((L,li)=>li).filter(li => {
+    return LINES[li].stops.includes(name);
+  }).filter(li => !builtOnly || (openMap().get(name) || []).includes(li));
+}
+const levelFor = t => { let l=1; for (let i=1;i<LEVELS.length;i++) if (t>=LEVELS[i]) l=i+1; return l; };
+
+/* ================= 収益 ================= */
+function computeRates(){
+  const hm = HOURS[Math.floor(S.min/60)%24];
+  const op = [], nOp = {}, tourAt = {};
+  for (const k of S.sights) tourAt[SIGHTS[k].st] = (tourAt[SIGHTS[k].st]||0) + SIGHTS[k].tour;
+  LINES.forEach((L,li) => { const names = lineStations(li); if (names.length && S.trains[li] > 0){ op.push({li,p:{names}}); for (const n of names) nOp[n]=(nOp[n]||0)+1; } });
+  let inc=0, rid=0, tou=0, dem=0; const per={}, sd={};
+  for (const {li,p} of op){
+    let d=0, dt=0;
+    for (const n of p.names){
+      const k = nOp[n], base = ST[n][2]*0.35*hm*(1+0.25*(k-1))*stBoost(n), t = (tourAt[n]||0)*(0.5+0.5*hm)*stBoost(n);
+      sd[n] = base + t; d += (base+t)/k; dt += t/k;
+    }
+    const cap = S.trains[li]*TRAIN_CAP*condFactor(li), sv = Math.min(d,cap), fare = (7 + 0.5*S.built[li].length) * (1 + 0.001*S.tlv[li]);
+    inc += sv*fare; rid += sv; tou += d ? sv*dt/d : 0; dem += d;
+    per[li] = { d, cap, sv, fare };
+  }
+  const sat = dem ? rid/dem : 1;
+  // 名所：観光収益（円/秒）と全路線の収益ボーナス。駅が開業している名所だけ効く
+  let sInc = 0, bonus = 0;
+  for (const k of S.sights){ const sg = SIGHTS[k]; if (sg && isOpen(sg.st)){ sInc += sg.inc*(0.5+0.5*hm); bonus += sg.bonus/100; } }
+  R = { inc: inc*(1+0.1*sat)*(1+bonus) + sInc, rid, tou, sat, per, dem:sd, sInc, bonus };
+}
+
+/* ================= 操作 ================= */
+function buildSeg(li,i){
+  const b = buildState(li,i); if (!b.ok){ toast(b.why); return; }
+  const [a,c] = ends(li,i);
+  S.money -= b.cost; S.invest = (S.invest||0) + b.cost; S.built[li].push(i);
+  let msg = `${LINES[li].name} ${a}〜${c} が開業しました`;
+  if (S.trains[li] === 0){ S.trains[li] = 1; msg += '（1編成つき）'; }
+  if (LINES[li].loop && S.built[li].length === nSegs(li)) msg = `${LINES[li].name}が一周つながりました！`;
+  if (S.built[li].length === nSegs(li)){ seenDone.add((NET.me || 'local') + ':' + li); announce(NET.me, S.company, li); }
+  toast(msg); changed();
+}
+function act(a){
+  const [k, x, y] = a.split(':'), li = +x;
+  if (k === 'build') return buildSeg(li, +y);
+  if (k === 'train'){ const c=trainCost(li); if (S.trains[li] >= maxTrains(li)) return toast('路線を延ばすと編成の上限が増えます'); if (S.money<c) return toast('お金が足りません'); S.money-=c; S.invest = (S.invest||0) + c; S.trains[li]++; toast(`${LINES[li].name}に1編成増発しました`); }
+  if (k === 'sight'){ const s=SIGHTS[li]; if (S.money<s.cost) return; S.money-=s.cost; S.invest = (S.invest||0) + s.cost; S.sights.push(li); toast(`${s.name}がオープンしました`); }
+  if (k === 'loan'){ const amt = 50000*S.lv; S.money += amt; S.loan = Math.round(amt*1.1); toast(`${yen(amt)}を借りました`); }
+  if (k === 'repay'){ if (S.money < S.loan) return toast('返済するお金が足りません'); S.money -= S.loan; S.loan = 0; toast('借入を返済しました'); }
+  if (k === 'names'){ S.names = !S.names; }
+  if (k === 'company'){ S.company = $('companyName').value.trim().slice(0,20); toast('会社名を保存しました'); setTimeout(pushScore, 50); }
+  if (k === 'watch'){ startSpec(x); return; }
+  if (k === 'tlv'){ const c = tlvCost(li); if (S.tlv[li] >= TLV_MAX) return; if (S.money < c) return toast('お金が足りません'); S.money -= c; S.invest = (S.invest||0) + c; S.tlv[li]++; toast(`${LINES[li].name}の車両がLv${S.tlv[li]}になりました`); }
+  if (k === 'fix'){ const c = repairCost(li); if (S.money < c) return toast('お金が足りません'); S.money -= c; S.invest = (S.invest||0) + c; S.cond[li] = 100; toast(`${LINES[li].name}の車両を修理しました`); }
+  if (k === 'fixall'){ const ops = LINES.map((L,i)=>i).filter(i => S.built[i].length), c = ops.reduce((a,i) => a + repairCost(i), 0);
+    if (S.money < c) return toast('お金が足りません'); S.money -= c; S.invest = (S.invest||0) + c; ops.forEach(i => S.cond[i] = 100); toast('全路線の車両を修理しました'); }
+  if (k === 'upst'){ const c = upCost(x); if (stLv(x) >= ST_MAX || !stationLines(x,true).length) return; if (S.money < c) return toast('お金が足りません');
+    S.money -= c; S.invest = (S.invest||0) + c; S.stLv[x] = stLv(x) + 1; toast(`${x}駅がLv${S.stLv[x]}になりました（乗客 +${S.stLv[x]*40}%）`); }
+  if (k === 'reset'){ if (resetArm > performance.now()){ S = fresh(); resetArm=0; fitView(); toast('最初からやり直します'); } else { resetArm = performance.now()+3000; toast('もう一度押すとデータを消して最初から始めます'); } }
+  if (k === 'go'){ const p = pt(x); cam.x=p.x; cam.y=p.y; cam.z=Math.max(cam.z,1.1); clampCam(); }
+  if (k === 'open'){ openPanel(x); return; }
+  changed();
+}
+let resetArm = 0;
+function changed(){
+  const nl = levelFor(S.total);
+  if (nl > S.lv){
+    S.lv = nl; toast(`レベル${nl}になりました！銀行で借りられる額が増えました`);
+  }
+  computeRates(); renderPanel(); hud(); save();
+}
+
+/* ================= パネル ================= */
+let view = null;
+const TITLES = { lines:'路線', cars:'車両', sights:'名所', bank:'銀行', settings:'設定', rank:'オンラインランキング' };
+function openPanel(v){ view = v; $('panel').hidden = false; renderPanel();
+  document.querySelectorAll('.dbtn').forEach(b => b.classList.toggle('on', b.dataset.view === v)); }
+function closePanel(){ view = null; $('panel').hidden = true; document.querySelectorAll('.dbtn').forEach(b => b.classList.remove('on')); }
+$('pClose').onclick = closePanel;
+document.querySelectorAll('.dbtn').forEach(b => b.onclick = () => view === b.dataset.view ? closePanel() : openPanel(b.dataset.view));
+$('pBody').addEventListener('click', e => { const b = e.target.closest('button[data-act]'); if (b && !b.disabled) act(b.dataset.act); });
+
+function segRow(li,i){
+  const [a,b] = ends(li,i), st = buildState(li,i), br = bridges(a,b);
+  if (st.done) return '';
+  const dis = st.ok ? '' : 'disabled';
+  return `<div class="seg"><span>${a} → ${b}${br?`<span class="tag">橋${br}</span>`:''}</span>
+    <button class="buy" data-act="build:${li}:${i}" data-cost="${st.cost}" ${dis} title="${st.ok?'':st.why}">${st.why && !st.money ? st.why : '建設 '+yen(st.cost)}</button></div>`;
+}
+function nextSegs(li){
+  const n = nSegs(li), out = [];
+  for (let i=0;i<n;i++){ if (S.built[li].includes(i)) continue; if (!canConnect(li, i, S.built, isOpen)) out.push(i); }
+  if (!S.built[li].length){
+    const act = out.filter(i => ends(li,i).some(s => stationLines(s,true).length));
+    return (act.length ? act : out).slice(0,4);
+  }
+  return out;
+}
+function renderPanel(){
+  if (!view) return;
+  let html = '', title = TITLES[view] || '';
+  if (view === 'lines'){
+    html += `<p class="note">駅を長押しして隣の駅へなぞると、金額が出て、離すとその区間を買えます（続けてなぞると何区間でもまとめて買えます）。地図上の薄い線をタップしても建設できます。建設費は「基本料金＋距離料金（1kmあたり）＋資産による上乗せ」で、持っている区間が増えるほど上がります。1区間開業するごとに、その路線に置ける編成が1つ増えます。持っている路線はその端から延ばし、新しい路線は開業済みの駅から始められます。開業区間が多い路線ほど運賃が上がります。</p>`;
+    LINES.forEach((L,li) => {
+      const nb = S.built[li].length, n = nSegs(li);
+      html += `<div class="item"><div class="ihead"><span class="chip" style="--c:${L.color}"></span>${L.name}<span class="st">${nb}/${n}区間${L.loop?'・環状':''}</span></div>`;
+      if (nb) html += `<div class="kv"><span>列車 ${S.trains[li]}/${maxTrains(li)}</span><span class="num" data-inc="${li}">毎秒 ${lineInc(li)}円</span></div>`;
+      if (nb === n) html += `<p class="note">全区間開業済み</p>`;
+      else html += nextSegs(li).map(i => segRow(li,i)).join('');
+      html += `</div>`;
+    });
+  } else if (view === 'cars'){
+    const ops = LINES.map((L,li)=>li).filter(li => S.built[li].length);
+    if (!ops.length) html += `<p class="note">まだ開業した路線がありません。まず「路線」から区間を建設しましょう。</p>`;
+    for (const li of ops){
+      const L = LINES[li], p = R.per[li] || { d:0, cap:0, sv:0, fare:0 }, f = p.d ? Math.min(1, p.cap/p.d) : 1;
+      html += `<div class="item"><div class="ihead"><span class="chip" style="--c:${L.color}"></span>${L.name}<span class="st">運賃 ${p.fare.toFixed(1)}円</span></div>
+        <div class="kv"><span>輸送力 ${p.cap.toFixed(1)}人/秒</span><span>需要 ${p.d.toFixed(1)}人/秒</span></div>
+        <div class="meter" style="--c:${f>=1?'var(--good)':f>.6?'var(--gold)':'var(--bad)'}"><i style="width:${Math.round(f*100)}%"></i></div>
+        <div class="seg"><span>${S.trains[li]} / ${maxTrains(li)}編成</span>${S.trains[li]>=maxTrains(li)?'<span class="note">上限（路線を延ばすと増えます）</span>':`<button class="buy alt" data-act="train:${li}" data-cost="${trainCost(li)}">増発 ${yen(trainCost(li))}</button>`}</div>
+        <div class="seg"><span>車両Lv${S.tlv[li]}（収益 +${(S.tlv[li]*0.1).toFixed(1)}%）</span>${S.tlv[li]>=TLV_MAX?'<span class="note">最大</span>':`<button class="buy alt" data-act="tlv:${li}" data-cost="${tlvCost(li)}">レベルアップ ${yen(tlvCost(li))}</button>`}</div>
+        <div class="kv"><span>状態 ${Math.floor(S.cond[li])}%${S.cond[li]<50?'（要修理）':''}</span><span>輸送力×${condFactor(li).toFixed(2)}</span></div>
+        <div class="meter" style="--c:${S.cond[li]>=70?'var(--good)':S.cond[li]>=40?'var(--gold)':'var(--bad)'}"><i style="width:${Math.floor(S.cond[li])}%"></i></div>
+        <div class="seg"><span></span>${S.cond[li]>=99.5?'<span class="note">整備済み</span>':`<button class="buy" data-act="fix:${li}" data-cost="${repairCost(li)}">修理 ${yen(repairCost(li))}</button>`}</div></div>`;
+    }
+    if (ops.length){ const all = ops.reduce((a,li) => a + repairCost(li), 0);
+      if (all > 0) html = `<div class="item"><div class="seg"><span>全路線をまとめて修理</span><button class="buy" data-act="fixall" data-cost="${all}">修理 ${yen(all)}</button></div><p class="note">車両は走るほど傷みます。状態が下がると輸送力が落ちます（0%で4割）。</p></div>` + html; }
+  } else if (view === 'sights'){
+    html += `<div class="item"><div class="kv"><span>観光収益</span><span class="num">${Math.round(R.sInc||0).toLocaleString('ja-JP')}円/秒</span></div><div class="kv"><span>全路線の収益</span><span class="num">+${((R.bonus||0)*100).toFixed(1)}%</span></div></div>
+      <p class="note">名所を建てると、観光収益が毎秒入り、全路線の収益も上がります。最寄り駅に観光客も集まります。駅が開業していないと効果は出ません。</p>`;
+    SIGHTS.forEach((s,k) => {
+      const own = S.sights.includes(k), open = stationLines(s.st,true).length > 0;
+      html += `<div class="item"><div class="ihead"><span class="chip" style="--c:var(--b-sight)"></span>${s.name}<span class="st">${s.st}駅</span></div>
+        <div class="seg"><span class="note">観光収益 ${s.inc}円/秒・全路線 +${s.bonus}%・観光客 +${s.tour}人/秒${open?'':'（駅が未開業）'}</span>${own?'<span class="note">営業中</span>':`<button class="buy" data-act="sight:${k}" data-cost="${s.cost}">建設 ${yen(s.cost)}</button>`}</div>
+        <div class="seg"><span></span><button class="buy alt" data-act="go:${s.st}">地図で見る</button></div></div>`;
+    });
+  } else if (view === 'bank'){
+    const amt = 50000*S.lv;
+    html += `<div class="item"><div class="ihead">川島銀行 融資窓口</div>
+      <p class="note">レベルに応じて借りられます。返済額は借りた額の1.1倍。返すまで次は借りられません。</p>
+      ${S.loan ? `<div class="kv"><span>返済額</span><span class="num">${yen(S.loan)}</span></div><div class="seg"><span></span><button class="buy warn" data-act="repay" data-cost="${S.loan}">返済する</button></div>`
+               : `<div class="kv"><span>借入可能額</span><span class="num">${yen(amt)}</span></div><div class="seg"><span></span><button class="buy" data-act="loan">借りる</button></div>`}</div>`;
+  } else if (view === 'settings'){
+    html += `<div class="item"><div class="ihead">会社名（ランキングに表示）</div>
+      <div class="field"><input id="companyName" maxlength="20" placeholder="例：川島急行電鉄"><button class="buy" data-act="company">保存</button></div></div>
+      <div class="item"><div class="seg"><span>駅名の表示</span><button class="buy alt" data-act="names">${S.names?'表示中':'非表示'}</button></div></div>
+      <div class="item"><p class="note">データはこのブラウザに自動保存されます。閉じている間も、最大3時間ぶん収益の半分が入ります。</p>
+      <div class="seg"><span>最初からやり直す</span><button class="buy warn" data-act="reset">リセット</button></div></div>`;
+  } else if (view.startsWith('st:')){
+    const name = view.slice(3); title = name + '駅';
+    const lines = stationLines(name,false), open = stationLines(name,true);
+    html += `<div class="kv"><span>人口規模</span><span>${'●'.repeat(ST[name][2])}</span></div>
+      <div class="kv"><span>状態</span><span>${open.length?`開業中・${open.length}路線`:'未開業'}</span></div>
+      ${R.dem[name]?`<div class="kv"><span>利用需要</span><span class="num">${R.dem[name].toFixed(1)}人/秒</span></div>`:''}`;
+    { const lv = stLv(name), c = upCost(name);
+      html += `<div class="item"><div class="ihead"><span class="chip" style="--c:var(--gold)"></span>駅のレベル<span class="st">${MAJOR.includes(name)?'主要駅・':''}Lv${lv} / ${ST_MAX}</span></div>
+        <div class="kv"><span>乗客ボーナス</span><span>+${Math.round((stBoost(name)-1)*100)}%${lv<ST_MAX?` → +${Math.round(lv*40+40)}%`:''}</span></div>
+        ${lv >= ST_MAX ? '<p class="note">最大レベルです</p>' : !open.length ? '<p class="note">駅が開業するとアップグレードできます</p>'
+          : `<p class="note">乗客が増えても、通る路線の輸送力（編成数）が足りないと運びきれません。必要なら増発しましょう。</p><div class="seg"><span>Lv${lv+1}へアップグレード</span><button class="buy" data-act="upst:${name}" data-cost="${c}">${yen(c)}</button></div>`}</div>`; }
+    for (const li of lines){
+      const L = LINES[li], segs = [];
+      for (let i=0;i<nSegs(li);i++) if (ends(li,i).includes(name)) segs.push(i);
+      html += `<div class="item"><div class="ihead"><span class="chip" style="--c:${L.color}"></span>${L.name}</div>${segs.map(i=>segRow(li,i)).join('') || '<p class="note">この駅の区間は開業済み</p>'}</div>`;
+    }
+    SIGHTS.forEach((s,k) => { if (s.st===name) html += `<p class="note">近くの名所：${s.name}${S.sights.includes(k)?'（営業中）':''}</p>`; });
+  } else if (view.startsWith('seg:')){
+    const [, li, i] = view.split(':').map(Number), L = LINES[li], [a,b] = ends(li,i);
+    title = `${L.name} ${a}〜${b}`;
+    { const cp = costParts(li,i);
+      html += `<div class="kv"><span>距離</span><span class="num">${segKm(li,i).toFixed(1)}km</span></div>
+        <div class="kv"><span>基本料金</span><span class="num">${yen(cp.base)}</span></div>
+        <div class="kv"><span>距離料金</span><span class="num">${yen(cp.dist)}</span></div>
+        <div class="kv"><span>資産による上乗せ</span><span class="num">${yen(cp.extra)}</span></div>`; }
+    html += `
+`;
+    const r = segRow(li,i);
+    html += r ? `<div class="item">${r}</div>` : `<p class="note">開業済みの区間です</p>`;
+  }
+  else if (view === 'rank') html += rankHTML(true);
+  $('pTitle').textContent = title; $('pBody').innerHTML = html; refreshButtons();
+  if (view === 'settings') $('companyName').value = S.company || '';
+  if (view === 'rank') fillNames($('pBody'));
+}
+function refreshButtons(){
+  document.querySelectorAll('#pBody [data-inc]').forEach(el => { const t = `毎秒 ${lineInc(+el.dataset.inc)}円`; if (el.textContent !== t) el.textContent = t; });
+  document.querySelectorAll('#pBody button[data-cost]').forEach(b => {
+    const c = +b.dataset.cost, a = b.dataset.act;
+    if (a.startsWith('build')){ const [,li,i] = a.split(':').map(Number), st = buildState(li,i); b.disabled = !st.ok;
+      if (st.ok || st.money){ const t = '建設 ' + yen(st.cost); if (b.textContent !== t) b.textContent = t; } }
+    else b.disabled = S.money < c;
+  });
+}
+
+/* ================= HUD ================= */
+let toastT;
+function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600); }
+function hud(){
+  const lo = LEVELS[S.lv-1] ?? 0, hi = LEVELS[S.lv] ?? lo, f = hi>lo ? Math.min(1,(S.total-lo)/(hi-lo)) : 1;
+  $('lvNum').textContent = S.lv; $('lvLabel').textContent = S.lv; $('lvPct').textContent = Math.floor(f*100)+'%'; $('lvBar').style.width = (f*100)+'%';
+  const m = Math.floor(S.min), hh = Math.floor(m/60)%24, mm = m%60, d = new Date(BASE_DATE); d.setDate(d.getDate() + Math.floor(m/1440));
+  $('clk').textContent = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
+  $('date').textContent = `${d.getMonth()+1}月${d.getDate()}日(${WEEK[d.getDay()]})・川島`;
+  $('sTotal').textContent = yen(S.total); $('sRiders').textContent = ppl(S.riders); $('sTour').textContent = ppl(S.tourists);
+  $('sSat').textContent = Math.round(R.sat*100)+'%'; document.querySelector('#satBar i').style.width = (R.sat*100)+'%';
+  $('money').textContent = yen(S.money); $('rate').textContent = `+${Math.round(R.inc).toLocaleString('ja-JP')}円/秒`;
+}
+
+/* ================= 地図の描画 ================= */
+const cv = $('cv'), ctx = cv.getContext('2d');
+const cam = { x:W/2, y:H/2, z:0.5 }; let cw=0, ch=0, dpr=1, fitZ=0.5;
+function resize(){ cw = innerWidth; ch = innerHeight; dpr = Math.min(2, devicePixelRatio||1); cv.width = cw*dpr; cv.height = ch*dpr;
+  fitZ = Math.min(cw/(W+160), ch/(H+260)); clampCam(); }
+function fitView(){ cam.x = W/2; cam.y = H/2 + 20; cam.z = fitZ; }
+function clampCam(){ cam.z = Math.min(3.5, Math.max(fitZ*0.7, cam.z)); cam.x = Math.min(W+100, Math.max(-100, cam.x)); cam.y = Math.min(H+100, Math.max(-100, cam.y)); }
+const toWorld = (sx,sy) => ({ x:(sx-cw/2)/cam.z + cam.x, y:(sy-ch/2)/cam.z + cam.y });
+
+function offsets(){
+  const m = new Map();
+  LINES.forEach((L,li) => { for (let i=0;i<nSegs(li);i++){ const [a,b]=ends(li,i), k=[a,b].sort().join('|'); if(!m.has(k)) m.set(k,[]); m.get(k).push(li); } });
+  return m;
+}
+const OFFS = offsets();
+function segXY(li,a,b){
+  const k=[a,b].sort().join('|'), arr=OFFS.get(k)||[li], [lo,hi]=[a,b].sort();
+  const dx=ST[hi][0]-ST[lo][0], dy=ST[hi][1]-ST[lo][1], len=Math.hypot(dx,dy)||1;
+  const o=(arr.indexOf(li)-(arr.length-1)/2)*5/cam.z, px=-dy/len*o, py=dx/len*o;
+  return [ST[a][0]+px, ST[a][1]+py, ST[b][0]+px, ST[b][1]+py];
+}
+function pathPoint(names, loop, d){
+  const pts = names.map(n => ST[n]); if (loop) pts.push(pts[0]);
+  for (let i=0;i<pts.length-1;i++){ const L=Math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1]);
+    if (d <= L){ const t=d/L; return [pts[i][0]+(pts[i+1][0]-pts[i][0])*t, pts[i][1]+(pts[i+1][1]-pts[i][1])*t, Math.atan2(pts[i+1][1]-pts[i][1], pts[i+1][0]-pts[i][0])]; }
+    d -= L; }
+  const l = pts[pts.length-1]; return [l[0], l[1], 0];
+}
+function pathLen(names, loop){ const pts=names.map(n=>ST[n]); if(loop) pts.push(pts[0]); let s=0; for(let i=0;i<pts.length-1;i++) s+=Math.hypot(pts[i+1][0]-pts[i][0],pts[i+1][1]-pts[i][1]); return s; }
+
+let labelCache = { key:'', pos:{} };
+function segHitsRect(s, r){
+  // 線分 s=[x1,y1,x2,y2] と矩形 r が交差するか（Liang–Barsky）
+  let t0 = 0, t1 = 1; const dx = s[2]-s[0], dy = s[3]-s[1];
+  for (const [p,q] of [[-dx, s[0]-r.x0],[dx, r.x1-s[0]],[-dy, s[1]-r.y0],[dy, r.y1-s[1]]]){
+    if (p === 0){ if (q < 0) return false; continue; }
+    const t = q/p; if (p < 0){ if (t > t1) return false; if (t > t0) t0 = t; } else { if (t < t0) return false; if (t < t1) t1 = t; }
+  }
+  return true;
+}
+function labelLayout(){
+  const z = cam.z, px = 1/z, key = Math.round(Math.log(z)*25) + '|' + totalBuilt() + '|' + (SPEC ? SPEC.id : '') + '|' + SHOW_ALL;
+  if (labelCache.key === key) return labelCache.pos;
+  const open = new Set(LINES.flatMap((L,li) => lineStations(li)));
+  const segs = [];
+  LINES.forEach((L,li) => { for (let i=0;i<nSegs(li);i++){ if (!segVis(li,i)) continue; const [a,b] = ends(li,i); segs.push(segXY(li,a,b)); } });
+  const names = Object.keys(ST).filter(stVis).sort((a,b) => (open.has(b)-open.has(a)) || (ST[b][2]-ST[a][2]));
+  const placed = [], pos = {}, inf = 2.5*px, g = 3.5*px;
+  // 名所の星と名前（星の右側）を先に置いて、駅名がよけるようにする
+  ctx.font = `700 ${10*px}px 'M PLUS Rounded 1c', sans-serif`;
+  for (const sg of SIGHTS){ const w = ctx.measureText(sg.name).width;
+    placed.push({ x0:sg.x-10*px, x1:sg.x+13*px+w+inf, y0:sg.y-9*px, y1:sg.y+9*px }); }
+  for (const name of names){
+    const [x,y] = ST[name], op = open.has(name);
+    const font = op ? `800 ${10.5*px}px 'M PLUS Rounded 1c', sans-serif` : `500 ${9.5*px}px 'M PLUS Rounded 1c', sans-serif`;
+    ctx.font = font;
+    const tw = ctx.measureText(name).width, th = (op ? 11 : 10)*px;
+    const nl = op ? stationLines(name,true).length : 0;
+    const mw = op ? (nl*8+8)*px/2 : 4.5*px, mh = op ? 6.5*px : 4.5*px;
+    const C = [[0, mh+g+th/2],[mw+g+tw/2, 0],[0, -(mh+g+th/2)],[-(mw+g+tw/2), 0],
+               [mw+tw/2, mh+th/2+g*0.4],[mw+tw/2, -(mh+th/2+g*0.4)],[-(mw+tw/2), mh+th/2+g*0.4],[-(mw+tw/2), -(mh+th/2+g*0.4)],
+               [0, mh+g*3+th*1.5],[0, -(mh+g*3+th*1.5)]];
+    let best = null, bs = Infinity;
+    C.forEach(([dx,dy],k) => {
+      const cx = x+dx, cy = y+dy, r = { x0:cx-tw/2-inf, x1:cx+tw/2+inf, y0:cy-th/2-inf, y1:cy+th/2+inf };
+      let sc = k*0.15 + (k >= 8 ? 2 : 0);
+      for (const sg of segs){
+        if (Math.max(sg[0],sg[2]) < r.x0 || Math.min(sg[0],sg[2]) > r.x1 || Math.max(sg[1],sg[3]) < r.y0 || Math.min(sg[1],sg[3]) > r.y1) continue;
+        if (segHitsRect(sg, r)) sc += 10;
+      }
+      for (const q of placed) if (q.x0 < r.x1 && q.x1 > r.x0 && q.y0 < r.y1 && q.y1 > r.y0) sc += 8;
+      for (const n2 of names){ if (n2 === name) continue; const [sx,sy] = ST[n2];
+        if (sx > r.x0-6*px && sx < r.x1+6*px && sy > r.y0-6*px && sy < r.y1+6*px) sc += 6; }
+      if (sc < bs){ bs = sc; best = { x:cx, y:cy, r }; }
+    });
+    placed.push(best.r); pos[name] = { x:best.x, y:best.y, font, open:op };
+  }
+  labelCache = { key, pos };
+  return pos;
+}
+let hover = null, anim = 0;
+function draw(){
+  const z = cam.z, px = 1/z;
+  ctx.setTransform(dpr,0,0,dpr,0,0); ctx.fillStyle = '#F7F7F3'; ctx.fillRect(0,0,cw,ch);
+  ctx.setTransform(dpr*z,0,0,dpr*z,dpr*(cw/2-cam.x*z),dpr*(ch/2-cam.y*z));
+  // 地形
+  if (SEA.length){ ctx.fillStyle = '#CFE5F2'; ctx.beginPath(); SEA.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.fill(); }
+  ctx.strokeStyle = '#CFE5F2'; ctx.lineWidth = 46; ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath(); RIVER.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1])); ctx.stroke();
+  if (PARK){ ctx.fillStyle = '#DCEDD5'; ctx.beginPath(); ctx.ellipse(PARK.x,PARK.y,PARK.rx,PARK.ry,0.3,0,Math.PI*2); ctx.fill(); }
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  for (const l of LABELS){ ctx.font = `700 ${Math.max(13*px, 16)}px 'M PLUS Rounded 1c', sans-serif`; ctx.fillStyle = l.water ? '#7DA9C4' : '#B3B8B0'; ctx.fillText(l.t, l.x, l.y); }
+
+  // 計画線（薄く）
+  ctx.lineCap='round';
+  LINES.forEach((L,li) => {
+    for (let i=0;i<nSegs(li);i++){ if (S.built[li].includes(i) || !segVis(li,i)) continue; const [a,b]=ends(li,i), s=segXY(li,a,b);
+      const hl = hover && hover.type==='seg' && hover.li===li && hover.i===i;
+      ctx.globalAlpha = hl ? 0.8 : 0.35; ctx.strokeStyle = L.color; ctx.lineWidth = (hl?5:2.5)*px;
+      ctx.beginPath(); ctx.moveTo(s[0],s[1]); ctx.lineTo(s[2],s[3]); ctx.stroke(); }
+  });
+  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  // 開業区間
+  LINES.forEach((L,li) => { ctx.strokeStyle = L.color; ctx.lineWidth = 5*px;
+    for (const i of S.built[li]){ const [a,b]=ends(li,i), s=segXY(li,a,b); ctx.beginPath(); ctx.moveTo(s[0],s[1]); ctx.lineTo(s[2],s[3]); ctx.stroke(); } });
+  // 橋
+  ctx.strokeStyle = '#1E2329'; ctx.lineWidth = 1.6*px;
+  LINES.forEach((L,li) => { for (const i of S.built[li]){ const [a,b]=ends(li,i); if (!bridges(a,b)) continue;
+    const A=ST[a], B=ST[b];
+    for (let j=0;j<RIVER.length-1;j++){ const P=RIVER[j],Q=RIVER[j+1], d1=cr(P,Q,A), d2=cr(P,Q,B);
+      if ((d1>0)===(d2>0) || (cr(A,B,P)>0)===(cr(A,B,Q)>0)) continue;
+      const t=d1/(d1-d2), cx=A[0]+(B[0]-A[0])*t, cy=A[1]+(B[1]-A[1])*t, len=Math.hypot(B[0]-A[0],B[1]-A[1]), ux=(B[0]-A[0])/len, uy=(B[1]-A[1])/len;
+      for (const sg of [-1,1]){ ctx.beginPath(); ctx.moveTo(cx-ux*26-uy*7*px*sg, cy-uy*26+ux*7*px*sg); ctx.lineTo(cx+ux*26-uy*7*px*sg, cy+uy*26+ux*7*px*sg); ctx.stroke(); } } } });
+
+  // 名所
+  SIGHTS.forEach((s,k) => { if (!stVis(s.st)) return; const own = S.sights.includes(k), r = 9*px;
+    ctx.fillStyle = own ? '#F0A400' : '#FFFFFF'; ctx.strokeStyle = own ? '#B97800' : '#C9CCC6'; ctx.lineWidth = 1.5*px;
+    ctx.beginPath(); for (let i=0;i<10;i++){ const a=-Math.PI/2+i*Math.PI/5, rr=i%2?r*0.48:r; const x=s.x+Math.cos(a)*rr, y=s.y+Math.sin(a)*rr; i?ctx.lineTo(x,y):ctx.moveTo(x,y); } ctx.closePath(); ctx.fill(); ctx.stroke();
+    if (z > 0.75){ ctx.font = `700 ${10*px}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = 'left';
+      ctx.lineWidth = 3.2*px; ctx.strokeStyle = '#F7F7F3'; ctx.lineJoin = 'round'; ctx.strokeText(s.name, s.x + 13*px, s.y);
+      ctx.fillStyle = own ? '#9A6400' : '#A3A8A1'; ctx.fillText(s.name, s.x + 13*px, s.y); ctx.textAlign = 'center'; } });
+
+  // 列車
+  LINES.forEach((L,li) => { const ps = linePaths(li); if (!ps.length || !S.trains[li]) return;
+    ps.forEach((p,pi) => {
+    const len = pathLen(p.names, p.loop), per = p.loop ? len : len*2;
+    const n = Math.floor(S.trains[li]/ps.length) + (pi < S.trains[li]%ps.length ? 1 : 0);
+    for (let k=0;k<n;k++){
+      let d = ((anim*42 + k*per/n) % per + per) % per; let back = false;
+      if (!p.loop && d > len){ d = per - d; back = true; }
+      const [x,y,a] = pathPoint(p.names, p.loop, d);
+      ctx.save(); ctx.translate(x,y); ctx.rotate(a + (back?Math.PI:0));
+      const tw = 13*px, th = 7*px;
+      ctx.fillStyle = '#FFFFFF'; ctx.beginPath(); ctx.roundRect(-tw/2-1.5*px,-th/2-1.5*px,tw+3*px,th+3*px,3*px); ctx.fill();
+      ctx.fillStyle = L.color; ctx.beginPath(); ctx.roundRect(-tw/2,-th/2,tw,th,2*px); ctx.fill();
+      ctx.restore(); }
+    });
+  });
+
+  // 長押しで引いている建設予定の線
+  if (BD){
+    ctx.lineCap = 'round';
+    BD.steps.forEach((st,k) => {
+      const a = BD.path[k], b = BD.path[k+1], sg = segXY(st.li, a, b);
+      ctx.strokeStyle = LINES[st.li].color; ctx.lineWidth = 8*px; ctx.globalAlpha = st.built ? 0.5 : 0.95;
+      ctx.setLineDash(st.built ? [] : [10*px, 6*px]); ctx.beginPath(); ctx.moveTo(sg[0],sg[1]); ctx.lineTo(sg[2],sg[3]); ctx.stroke();
+    });
+    const L = ST[BD.path[BD.path.length-1]];
+    ctx.setLineDash([6*px, 6*px]); ctx.globalAlpha = 0.7; ctx.strokeStyle = '#1E2329'; ctx.lineWidth = 2.5*px;
+    ctx.beginPath(); ctx.moveTo(L[0], L[1]); ctx.lineTo(BD.x, BD.y); ctx.stroke();
+    ctx.setLineDash([]); ctx.globalAlpha = 1;
+    ctx.strokeStyle = '#1E2329'; ctx.lineWidth = 3*px; ctx.beginPath(); ctx.arc(ST[BD.path[0]][0], ST[BD.path[0]][1], 11*px, 0, Math.PI*2); ctx.stroke();
+  }
+  // 駅名（線や他の駅名と重ならない位置を選んで描く）
+  const drawNames = () => {
+    if (!S.names || z <= 0.75) return;
+    const lay = labelLayout();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.lineJoin = 'round';
+    for (const name in lay){
+      const L = lay[name]; if (!L.open && z <= 1.1) continue;
+      ctx.font = L.font; ctx.lineWidth = 3.2*px; ctx.strokeStyle = '#F7F7F3';
+      ctx.strokeText(name, L.x, L.y);
+      ctx.fillStyle = L.open ? '#1E2329' : '#9AA09A'; ctx.fillText(name, L.x, L.y);
+    }
+  };
+  // 駅
+  for (const name in ST){
+    if (!stVis(name)) continue;
+    const [x,y] = ST[name], op = stationLines(name,true);
+    if (op.length){
+      const dw = 8*px, w = op.length*dw + 8*px, h = 13*px;
+      const hl = hover && hover.type==='st' && hover.name===name;
+      ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = '#1E2329'; ctx.lineWidth = (hl?2.6:1.8)*px;
+      ctx.beginPath(); ctx.roundRect(x-w/2, y-h/2, w, h, h/2); ctx.fill(); ctx.stroke();
+      op.forEach((li,i) => { ctx.fillStyle = LINES[li].color; ctx.beginPath(); ctx.arc(x - w/2 + 4*px + dw*(i+0.5), y, 2.8*px, 0, Math.PI*2); ctx.fill(); });
+      const sl = stLv(name);
+      if (sl){ ctx.strokeStyle = '#F4B400'; ctx.lineWidth = 1.6*px; ctx.beginPath(); ctx.roundRect(x-w/2-2.5*px, y-h/2-2.5*px, w+5*px, h+5*px, h/2+2.5*px); ctx.stroke();
+        const bx = x + w/2 + 2*px, by = y - h/2 - 2*px; ctx.fillStyle = '#F4B400'; ctx.beginPath(); ctx.arc(bx, by, 5.5*px, 0, Math.PI*2); ctx.fill();
+        ctx.fillStyle = '#5A3D00'; ctx.font = `800 ${7.5*px}px 'M PLUS Rounded 1c', sans-serif`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(sl, bx, by + 0.3*px); }
+    } else {
+      const hl = hover && hover.type==='st' && hover.name===name;
+      ctx.fillStyle = '#FFFFFF'; ctx.strokeStyle = hl ? '#1E2329' : '#C4C8C2'; ctx.lineWidth = 1.5*px;
+      ctx.beginPath(); ctx.arc(x, y, 4.5*px, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    }
+  }
+  drawNames();
+}
+
+/* ================= 地図の操作 ================= */
+function pick(sx,sy){
+  const w = toWorld(sx,sy), tol = 14/cam.z;
+  let best = null, bd = tol*tol;
+  for (const n in ST){ if (!stVis(n)) continue; const d=(ST[n][0]-w.x)**2+(ST[n][1]-w.y)**2; if (d<bd){ bd=d; best={type:'st',name:n}; } }
+  if (best) return best;
+  const tl = 9/cam.z; bd = tl;
+  LINES.forEach((L,li) => { for (let i=0;i<nSegs(li);i++){ if (S.built[li].includes(i) || !segVis(li,i)) continue; const [a,b]=ends(li,i), s=segXY(li,a,b);
+    const dx=s[2]-s[0], dy=s[3]-s[1], t=Math.max(0,Math.min(1,((w.x-s[0])*dx+(w.y-s[1])*dy)/(dx*dx+dy*dy))), d=Math.hypot(s[0]+dx*t-w.x, s[1]+dy*t-w.y);
+    if (d<bd){ bd=d; best={type:'seg',li,i}; } } });
+  return best;
+}
+const ptrs = new Map(); let down = null, pinch = null, BD = null, lpTimer = null;
+/* 長押しで線を引いて建設：駅を長押し → 隣の駅へなぞる → 離すと購入 */
+function pickStation(sx, sy, tolPx){
+  const w = toWorld(sx,sy), tol = tolPx/cam.z; let best = null, bd = tol*tol;
+  for (const n in ST){ if (!stVis(n)) continue; const d = (ST[n][0]-w.x)**2 + (ST[n][1]-w.y)**2; if (d < bd){ bd = d; best = n; } }
+  return best;
+}
+function findStep(a, b, prevLi){
+  let best = null, score = -1;
+  LINES.forEach((L,li) => { for (let i=0;i<nSegs(li);i++){ const [x,y] = ends(li,i);
+    if (!((x===a && y===b) || (x===b && y===a))) continue;
+    const built = S.built[li].includes(i), sc = (built ? 0 : 2) + (li === prevLi ? 1 : 0);
+    if (sc > score){ score = sc; best = { li, i, built }; } } });
+  return best;
+}
+function bdQuote(){
+  let n = totalBuilt(), total = 0; const items = [];
+  for (let k=0;k<BD.steps.length;k++){ const st = BD.steps[k];
+    if (st.built){ items.push({ st, cost:0 }); continue; }
+    const c = segCost(st.li, st.i, n); n++; total += c; items.push({ st, cost:c }); }
+  let why = '';
+  // 順番に買ったと仮定して、つながりのルールを1区間ずつ確かめる
+  const sim = S.built.map(b => b.slice()), opened = new Set(openMap().keys());
+  for (const st of BD.steps){
+    if (st.built) continue;
+    const r = canConnect(st.li, st.i, sim, n => opened.has(n));
+    if (r){ why = r; break; }
+    sim[st.li].push(st.i); ends(st.li, st.i).forEach(n => opened.add(n));
+  }
+  if (!why && total > S.money) why = 'お金が足りません';
+  return { items, total, why };
+}
+function updateTip(sx, sy){
+  const tip = $('bdTip');
+  if (!BD){ tip.hidden = true; return; }
+  const q = bdQuote(); tip.hidden = false; tip.classList.toggle('ng', !!q.why);
+  if (!BD.steps.length){ tip.innerHTML = `<span>${BD.path[0]}駅から隣の駅へなぞってください</span>`; }
+  else {
+    const rows = q.items.slice(-4).map((it,k,arr) => { const idx = q.items.length - arr.length + k, a = BD.path[idx], b = BD.path[idx+1];
+      return `<span class="ln"><i style="background:${LINES[it.st.li].color}"></i>${LINES[it.st.li].name} ${a}→${b}　${it.st.built ? '開業済み' : yen(it.cost)}</span>`; }).join('');
+    tip.innerHTML = (q.items.length > 4 ? `<span class="ln">…ほか${q.items.length-4}区間</span>` : '') + rows +
+      `<span class="tt">${q.why || (q.total ? `合計 ${yen(q.total)}・離すと購入` : '新しい区間がありません')}</span>`;
+  }
+  const r = tip.getBoundingClientRect();
+  tip.style.left = Math.min(innerWidth - r.width - 8, sx + 18) + 'px';
+  tip.style.top = Math.max(8, Math.min(innerHeight - r.height - 8, sy - r.height - 18)) + 'px';
+}
+function extendBD(sx, sy){
+  const n = pickStation(sx, sy, 16), p = BD.path, last = p[p.length-1];
+  if (!n || n === last) return;
+  if (p.length >= 2 && n === p[p.length-2]){ p.pop(); BD.steps.pop(); return; }
+  if (p.includes(n)) return;
+  const prev = BD.steps.length ? BD.steps[BD.steps.length-1].li : -1, st = findStep(last, n, prev);
+  if (!st) return;
+  p.push(n); BD.steps.push(st);
+}
+function commitBD(){
+  const q = bdQuote(), todo = BD.steps.filter(s => !s.built);
+  if (!todo.length) return;
+  if (q.why){ toast(q.why); return; }
+  let ok = 0;
+  for (const st of todo){ if (!buildState(st.li, st.i).ok) break; buildSeg(st.li, st.i); ok++; }
+  if (ok > 1) toast(`${ok}区間を開業しました（合計 ${yen(q.total)}）`);
+}
+function cancelBD(){ BD = null; clearTimeout(lpTimer); updateTip(); }
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => {
+  cv.setPointerCapture(e.pointerId); ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (ptrs.size === 1){
+    down = { x:e.clientX, y:e.clientY, cx:cam.x, cy:cam.y, moved:false };
+    const n = !SPEC && pickStation(e.clientX, e.clientY, 16);
+    if (n){ clearTimeout(lpTimer); const sx = e.clientX, sy = e.clientY;
+      lpTimer = setTimeout(() => { if (!down || down.moved || ptrs.size !== 1) return;
+        down.bd = true; const w = toWorld(sx, sy); BD = { path:[n], steps:[], x:w.x, y:w.y };
+        try { navigator.vibrate && navigator.vibrate(15); } catch(err){}
+        cv.style.cursor = 'crosshair'; updateTip(sx, sy); }, 320); }
+  }
+  if (ptrs.size === 2){ const [a,b] = [...ptrs.values()]; pinch = { d:Math.hypot(a.x-b.x,a.y-b.y), z:cam.z }; if (down) down.moved = true; cancelBD(); }
+});
+cv.addEventListener('pointermove', e => {
+  if (!ptrs.has(e.pointerId)){ if (e.pointerType === 'mouse'){ hover = pick(e.clientX, e.clientY); cv.style.cursor = hover ? 'pointer' : 'grab'; } return; }
+  ptrs.set(e.pointerId, {x:e.clientX, y:e.clientY});
+  if (BD){ const w = toWorld(e.clientX, e.clientY); BD.x = w.x; BD.y = w.y; extendBD(e.clientX, e.clientY); updateTip(e.clientX, e.clientY); return; }
+  if (ptrs.size === 2 && pinch){ const [a,b] = [...ptrs.values()]; cam.z = pinch.z * Math.hypot(a.x-b.x,a.y-b.y) / pinch.d; clampCam(); return; }
+  if (down){ const dx = e.clientX-down.x, dy = e.clientY-down.y; if (Math.hypot(dx,dy) > 6){ down.moved = true; clearTimeout(lpTimer); cv.classList.add('drag'); }
+    if (down.moved){ cam.x = down.cx - dx/cam.z; cam.y = down.cy - dy/cam.z; clampCam(); } }
+});
+function up(e){
+  clearTimeout(lpTimer);
+  if (BD){ commitBD(); BD = null; updateTip(); cv.style.cursor = 'grab'; ptrs.delete(e.pointerId); if (!ptrs.size) down = null; return; }
+  if (down && down.bd){ ptrs.delete(e.pointerId); if (!ptrs.size) down = null; return; }
+  if (ptrs.size === 1 && down && !down.moved){ const h = pick(e.clientX, e.clientY);
+    if (h && !SPEC) openPanel(h.type === 'st' ? 'st:'+h.name : `seg:${h.li}:${h.i}`); }
+  ptrs.delete(e.pointerId); if (ptrs.size < 2) pinch = null; if (!ptrs.size){ down = null; cv.classList.remove('drag'); }
+}
+cv.addEventListener('pointerup', up); cv.addEventListener('pointercancel', e => { ptrs.delete(e.pointerId); down=null; pinch=null; cancelBD(); });
+cv.addEventListener('wheel', e => { e.preventDefault(); const before = toWorld(e.clientX, e.clientY);
+  cam.z *= Math.exp(-e.deltaY*0.0015); clampCam(); const after = toWorld(e.clientX, e.clientY);
+  cam.x += before.x-after.x; cam.y += before.y-after.y; clampCam(); }, { passive:false });
+$('zIn').onclick = () => { cam.z *= 1.3; clampCam(); };
+$('zOut').onclick = () => { cam.z /= 1.3; clampCam(); };
+$('zFit').onclick = () => { SHOW_ALL = !SHOW_ALL; $('zFit').setAttribute('aria-pressed', String(SHOW_ALL));
+  if (SHOW_ALL) fitView(); toast(SHOW_ALL ? '全路線を表示中（もう一度押すと元に戻ります）' : '開業済みの駅と隣の駅だけを表示しています'); };
+addEventListener('resize', resize);
+
+/* ================= ループ ================= */
+let last = performance.now(), slow = 0, saveT = 0;
+function frame(now){
+  const dt = Math.min(0.25, (now-last)/1000); last = now; anim += dt;
+  for (let i=0;i<LINES.length;i++) if (S.trains[i] > 0 && S.built[i].length){ const before = S.cond[i];
+    S.cond[i] = Math.max(0, S.cond[i] - dt*0.03);
+    if (before >= 30 && S.cond[i] < 30) toast(`${LINES[i].name}の車両が傷んでいます。「車両」から修理しましょう`); }
+  S.avgInc = (S.avgInc || 0) + (R.inc - (S.avgInc || 0)) * Math.min(1, dt/600);
+  S.min += dt; S.money += R.inc*dt; S.total += R.inc*dt; S.riders += R.rid*dt; S.tourists += R.tou*dt;
+  slow += dt; if (slow > 0.25){ slow = 0; const before = S.lv; computeRates(); hud(); if (view) refreshButtons();
+    if (levelFor(S.total) > before) changed(); }
+  saveT += dt; if (saveT > 5){ saveT = 0; save(); }
+  if (SPEC){ const b=S.built, t=S.trains, g=S.sights, l=S.stLv; S.built=SPEC.built; S.trains=SPEC.trains; S.sights=SPEC.sights; S.stLv=SPEC.stLv;
+    try { draw(); } finally { S.built=b; S.trains=t; S.sights=g; S.stLv=l; } } else draw();
+  requestAnimationFrame(frame);
+}
+addEventListener('pagehide', save);
+
+/* ================= オンライン（ランキング・見学） ================= */
+// 路線完成のお知らせ（自分の完成はその場で、他の人の完成はランキングの更新から検出）
+const seenDone = new Set(), noticeQ = []; let doneBase = false, noticeBusy = false;
+function checkCompletions(rows){
+  const found = [];
+  for (const r of rows){
+    let b = []; try { b = JSON.parse(r.built || '[]'); } catch(e){}
+    LINES.forEach((L,li) => {
+      if (!Array.isArray(b[li]) || new Set(b[li]).size < nSegs(li)) return;
+      const k = r.id + ':' + li;
+      if (!seenDone.has(k)){ seenDone.add(k); if (doneBase) found.push([r,li]); }
+    });
+  }
+  doneBase = true;
+  for (const [r,li] of found) announce(r.id, r.company, li);
+}
+async function announce(id, company, li){
+  let name = company || '';
+  if (!name && id === NET.me) name = 'あなた';
+  if (!name && id && NET.user){ try { const ps = await NET.user.profiles([id]); name = (ps[id] && ps[id].name) || ''; } catch(e){} }
+  noticeQ.push(`${name || 'プレイヤー'}が${LINES[li].name}を完成させました！`);
+  showNotice();
+}
+function showNotice(){
+  if (noticeBusy || !noticeQ.length) return;
+  noticeBusy = true; const el = $('notice');
+  $('noticeText').textContent = noticeQ.shift(); el.hidden = false; el.classList.remove('hide');
+  setTimeout(() => { el.classList.add('hide'); setTimeout(() => { el.hidden = true; noticeBusy = false; showNotice(); }, 350); }, 5000);
+}
+const NET = { db:null, user:null, me:null, rows:[], online:0, err:null, names:{} };
+let SPEC = null, pushing = false, lastPush = '';
+const man = n => n >= 1e8 ? `${Math.floor(n/1e8)}億${Math.floor(n%1e8/1e4)}万円` : n >= 1e4 ? `${Math.floor(n/1e4)}万円` : yen(n);
+/* ===== Firebase の設定（Firebaseコンソール →「プロジェクトの設定」→「マイアプリ」の firebaseConfig を貼り付け） ===== */
+const FIREBASE_CONFIG = {
+  apiKey: "AIzaSyAQ9SlsHUkzkh2a9YlpQxz1yYHD5wPHg-4",
+  authDomain: "kawashimagame-3c0a8.firebaseapp.com",
+  databaseURL: "https://kawashimagame-3c0a8-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "kawashimagame-3c0a8",
+  appId: "1:1074404017591:web:820c7d4a095100d2911432"
+};
+async function initNet(){
+  askCompany();
+  if (!window.firebase || !FIREBASE_CONFIG.apiKey || !FIREBASE_CONFIG.databaseURL){ renderRank(); return; }
+  try {
+    firebase.initializeApp(FIREBASE_CONFIG);
+    await firebase.auth().signInAnonymously();           // 見えないログイン（会社名だけで参加）
+    NET.me = firebase.auth().currentUser.uid;
+    const db = firebase.database(); NET.fdb = db; NET.db = true;
+    db.ref('ranking').orderByChild('total').limitToLast(100).on('value', snap => {
+      const rows = []; snap.forEach(c => { rows.push({ id:c.key, ...c.val() }); });
+      rows.sort((a,b) => (b.total||0) - (a.total||0));
+      NET.rows = rows; checkCompletions(rows); renderRank();
+    }, () => { NET.err = 'read'; renderRank(); });
+    const me = db.ref('presence/' + NET.me);
+    db.ref('.info/connected').on('value', s => { if (s.val()){ me.onDisconnect().remove(); me.set(true); } });
+    db.ref('presence').on('value', s => { NET.online = s.numChildren(); renderRank(); });
+    pushScore(); setInterval(pushScore, 20000);
+  } catch(e){ NET.err = 'connect'; console.error(e); }
+  renderRank();
+}
+function askCompany(){
+  if (S.company) return;
+  const ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:20;display:grid;place-items:center;background:rgba(30,35,41,.35);padding:16px';
+  ov.innerHTML = `<div class="card" style="max-width:380px;width:100%;padding:20px;display:grid;gap:12px">
+    <b style="font-size:1.15rem">会社名を決めてください</b>
+    <span class="note">ランキングに表示されます。あとから「設定」で変えられます。</span>
+    <div class="field"><input id="joinName" maxlength="20" placeholder="例：川島急行電鉄"><button class="buy" id="joinBtn">はじめる</button></div></div>`;
+  document.body.appendChild(ov);
+  const go = () => { const v = $('joinName').value.trim().slice(0,20); if (!v){ $('joinName').focus(); return; }
+    S.company = v; save(); ov.remove(); setTimeout(pushScore, 50); };
+  $('joinBtn').onclick = go; $('joinName').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
+  setTimeout(() => $('joinName').focus(), 50);
+}
+async function pushScore(){
+  if (!NET.db || !NET.me || pushing) return;
+  const body = { company:S.company||'', total:Math.floor(S.total), riders:Math.floor(S.riders), lv:S.lv, segs:totalBuilt(),
+    built:JSON.stringify(S.built), stLv:JSON.stringify(S.stLv), trains:S.trains.slice(), sights:S.sights.slice(), updated:Date.now() };
+  const sig = JSON.stringify([Math.floor(body.total/1000), body.stLv, body.segs, body.company, body.sights.length, body.trains]);
+  if (sig === lastPush) return;
+  pushing = true;
+  try { await NET.fdb.ref('ranking/' + NET.me).set(body); lastPush = sig; NET.err = null; }
+  catch(e){ NET.err = (e && e.code) || 'error'; }
+  pushing = false; renderRank();
+}
+function rankHTML(full){
+  if (!NET.db) return `<p class="note">${NET.err === 'connect' ? 'サーバーにつながりませんでした。設定を確認してください。' : 'オンライン機能は Firebase の設定をすると使えます。'}</p>`;
+  let h = '';
+  if (full){
+    h += `<p class="note">同じページで遊んでいる人と総収益を競います。${NET.online ? `いまオンライン ${NET.online}人。` : ''}「見学」で相手の路線網を地図で見られます。会社名は設定から変えられます。</p>`;
+    if (NET.err && NET.err !== 'read') h += `<p class="note" style="color:var(--bad)">あなたの記録を送れませんでした。通信状態か Firebase のルール設定を確認してください。</p>`;
+  }
+  const rows = full ? NET.rows : NET.rows.slice(0,5);
+  if (!rows.length) h += `<p class="note">まだ記録がありません。区間を建設すると載ります。</p>`;
+  rows.forEach((r,i) => {
+    const me = r.id === NET.me;
+    h += `<div class="rk${me?' me':''}"><span class="n">${i+1}</span><span class="nm" data-uid="${r.id}" data-co="${encodeURIComponent(r.company||'')}">…</span><span class="sc">${man(r.total||0)}</span></div>`;
+    if (full) h += `<div class="seg" style="margin:-4px 0 4px 30px"><span class="note">Lv${r.lv||1}・${r.segs||0}区間・乗客 ${ppl(r.riders||0)}</span>${me?'':`<button class="buy alt" data-act="watch:${r.id}">見学</button>`}</div>`;
+  });
+  if (!full){ const mi = NET.rows.findIndex(r => r.id === NET.me); if (mi >= 5) h += `<div class="rk me"><span class="n">${mi+1}</span><span class="nm" data-uid="${NET.me}" data-co="${encodeURIComponent(S.company||'')}">…</span><span class="sc">${man(NET.rows[mi].total||0)}</span></div>`; }
+  return h;
+}
+async function fillNames(root){
+  const els = [...root.querySelectorAll('[data-uid]')];
+  const ids = [...new Set(els.map(e => e.dataset.uid))];
+  let ps = {};
+  if (NET.user && ids.length){ try { ps = await NET.user.profiles(ids); } catch(e){} }
+  for (const e of els){
+    const co = decodeURIComponent(e.dataset.co || ''), nm = (ps[e.dataset.uid] && ps[e.dataset.uid].name) || '';
+    e.textContent = (co || nm || 'プレイヤー') + (co && nm ? `（${nm}）` : '') + (e.dataset.uid === NET.me ? ' ・あなた' : '');
+  }
+}
+function renderRank(){
+  const c = $('onlineChip'); c.hidden = !NET.online; c.textContent = `オンライン ${NET.online}人`;
+  $('rankMini').innerHTML = rankHTML(false); fillNames($('rankMini'));
+  if (view === 'rank') renderPanel();
+  if (SPEC){ const r = NET.rows.find(r => r.id === SPEC.id); if (r) loadSpec(r); }
+}
+function loadSpec(r){
+  let built = []; try { built = JSON.parse(r.built || '[]'); } catch(e){}
+  SPEC = { id:r.id, built: LINES.map((L,i) => Array.isArray(built[i]) ? built[i].filter(n => Number.isInteger(n) && n >= 0 && n < nSegs(i)) : []),
+    trains: LINES.map((L,i) => Math.max(0, Math.min(999, +(r.trains||[])[i] || 0))), sights: (r.sights||[]).filter(k => Number.isInteger(k) && SIGHTS[k]), stLv:{} };
+  try { const o = JSON.parse(r.stLv || '{}'); for (const k in o) if (ST[k] && Number.isInteger(o[k])) SPEC.stLv[k] = Math.max(0, Math.min(ST_MAX, o[k])); } catch(e){}
+}
+async function startSpec(id){
+  const r = NET.rows.find(r => r.id === id); if (!r) return;
+  loadSpec(r); closePanel();
+  const el = document.createElement('span'); el.dataset.uid = id; el.dataset.co = encodeURIComponent(r.company||''); await fillNames({ querySelectorAll:() => [el] });
+  $('specText').textContent = `${el.textContent} の路線網を見学中（${man(r.total||0)}）`; $('specBar').hidden = false;
+}
+$('specBack').onclick = () => { SPEC = null; $('specBar').hidden = true; };
+$('rankAll').onclick = () => openPanel('rank');
+const _changed = changed; changed = function(){ _changed(); setTimeout(pushScore, 300); };
+
+resize(); fitView(); computeRates(); hud(); initNet();
+// 留守の間の収益
+(function(){ const el = Math.min(10800, (Date.now() - S.saved)/1000);
+  if (S.rate > 0 && el > 30){ const g = S.rate*el*0.5; S.money += g; S.total += g; toast(`留守の間に ${yen(g)} 稼ぎました`); }
+  else if (!totalBuilt()) { openPanel('lines'); toast('好きな路線の区間を建設してスタートしましょう'); } })();
+requestAnimationFrame(frame);
+</script>
+
+</body>
+</html>
