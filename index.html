@@ -733,15 +733,23 @@ const totalBuilt = () => S.built.reduce((a,b) => a + b.length, 0);
 // 資産＝所持金＋これまでの投資額−借入
 const assets = () => Math.max(0, S.money + (S.invest || 0) - (S.loan || 0));
 const segKm = (li,i) => segLen(li,i) / 40;
+// 中心都市と、そこでの都市部料金の最大割合（区間の中点が近いほど高く、離れるほど0に近づく）
+const CITY_CENTERS = { '川島':0.6, '下港':0.45, '七日市':0.4, '海王':0.35, '東島':0.35 }, CITY_R = 400;
+function urbanRate(li,i){
+  const [a,b] = ends(li,i), mx = (ST[a][0]+ST[b][0])/2, my = (ST[a][1]+ST[b][1])/2; let r = 0;
+  for (const c in CITY_CENTERS){ const d = Math.hypot(ST[c][0]-mx, ST[c][1]-my); r = Math.max(r, CITY_CENTERS[c] * Math.max(0, 1 - d/CITY_R)); }
+  return r;
+}
 function costParts(li,i,n){
   const nn = n ?? totalBuilt(), g = Math.pow(1.06, Math.min(nn,40)) * Math.pow(1.012, Math.max(0, nn-40));
   const base = 1000 * g;                 // 主：持っている区間の数で上がる基本料金
   const dist = segKm(li,i) * 400 * g;    // 距離料金：1kmあたり400円（基本料金と同じペースで上がる）
-  const extra = Math.min((base + dist) * 1.5, assets() * 0.03); // 資産の3%を上乗せ（最大1.5倍まで）
-  return { base, dist, extra };
+  const urban = (base + dist) * urbanRate(li,i);                // 都市部料金：中心都市に近いほど高い
+  const extra = Math.min((base + dist + urban) * 1.5, assets() * 0.03); // 資産の3%を上乗せ（最大1.5倍まで）
+  return { base, dist, urban, extra };
 }
 function segCost(li,i,n){
-  const { base, dist, extra } = costParts(li,i,n), v = base + dist + extra;
+  const { base, dist, urban, extra } = costParts(li,i,n), v = base + dist + urban + extra;
   return v < 10000 ? Math.round(v/10)*10 : Math.round(v/100)*100;
 }
 // 増発の値段：どの路線でも同じ基準。その路線の編成数で上がり（1編成ごとに25%）、資産の1%を上乗せ（最大で主と同額）
@@ -929,7 +937,7 @@ function renderPanel(){
   if (!view) return;
   let html = '', title = TITLES[view] || '';
   if (view === 'lines'){
-    html += `<p class="note">駅を長押しして隣の駅へなぞると、金額が出て、離すとその区間を買えます（続けてなぞると何区間でもまとめて買えます）。地図上の薄い線をタップしても建設できます。建設費は「基本料金＋距離料金（1kmあたり）＋資産による上乗せ」で、持っている区間が増えるほど上がります。1区間開業するごとに、その路線に置ける編成が1つ増えます。持っている路線はその端から延ばし、新しい路線は開業済みの駅から始められます。開業区間が多い路線ほど運賃が上がります。</p>`;
+    html += `<p class="note">駅を長押しして隣の駅へなぞると、金額が出て、離すとその区間を買えます（続けてなぞると何区間でもまとめて買えます）。地図上の薄い線をタップしても建設できます。建設費は「基本料金＋距離料金（1kmあたり）＋都市部料金（川島・下港・七日市・海王・東島の近く）＋資産による上乗せ」で、持っている区間が増えるほど上がります。1区間開業するごとに、その路線に置ける編成が1つ増えます。持っている路線はその端から延ばし、新しい路線は開業済みの駅から始められます。開業区間が多い路線ほど運賃が上がります。</p>`;
     LINES.forEach((L,li) => {
       const nb = S.built[li].length, n = nSegs(li);
       html += `<div class="item"><div class="ihead"><span class="chip" style="--c:${L.color}"></span>${L.name}<span class="st">${nb}/${n}区間${L.loop?'・環状':''}</span></div>`;
@@ -1002,6 +1010,7 @@ function renderPanel(){
       html += `<div class="kv"><span>距離</span><span class="num">${segKm(li,i).toFixed(1)}km</span></div>
         <div class="kv"><span>基本料金</span><span class="num">${yen(cp.base)}</span></div>
         <div class="kv"><span>距離料金</span><span class="num">${yen(cp.dist)}</span></div>
+        ${cp.urban >= 1 ? `<div class="kv"><span>都市部料金（+${Math.round(urbanRate(li,i)*100)}%）</span><span class="num">${yen(cp.urban)}</span></div>` : ''}
         <div class="kv"><span>資産による上乗せ</span><span class="num">${yen(cp.extra)}</span></div>`; }
     html += `
 `;
@@ -1411,7 +1420,7 @@ async function initNet(){
     db.ref('ranking').orderByChild('total').limitToLast(100).on('value', snap => {
       const rows = []; snap.forEach(c => { rows.push({ id:c.key, ...c.val() }); });
       rows.sort((a,b) => (b.total||0) - (a.total||0));
-      NET.rows = rows; checkCompletions(rows); renderRank();
+      NET.rows = rows.filter(r => r.company || r.total); checkCompletions(NET.rows); renderRank();
     }, () => { NET.err = 'read'; renderRank(); });
     const me = db.ref('presence/' + NET.me);
     db.ref('.info/connected').on('value', s => { if (s.val()){ me.onDisconnect().remove(); me.set(true); } });
@@ -1455,7 +1464,7 @@ async function adminReset(pw){
   } catch(e){ toast('パスワードが違います'); }
 }
 async function pushScore(){
-  if (!NET.db || !NET.me || pushing) return;
+  if (!NET.db || !NET.me || pushing || !S.company) return; // 会社名を決めるまでは送らない
   const body = { company:S.company||'', total:Math.floor(S.total), riders:Math.floor(S.riders), lv:S.lv, segs:totalBuilt(),
     built:JSON.stringify(S.built), stLv:JSON.stringify(S.stLv), trains:S.trains.slice(), sights:S.sights.slice(), updated:Date.now() };
   const sig = JSON.stringify([Math.floor(body.total/1000), body.stLv, body.segs, body.company, body.sights.length, body.trains]);
