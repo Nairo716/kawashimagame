@@ -157,7 +157,7 @@ button:focus-visible{outline:3px solid var(--b-line);outline-offset:2px}
 
 <div id="hudTop" class="card">
   <div class="lvBadge num" id="lvNum">1</div>
-  <div class="lvText"><b>レベル <span id="lvLabel">1</span><span id="lvPct" class="num">0%</span></b><div class="bar"><i id="lvBar"></i></div></div>
+  <div class="lvText"><b>レベル <span id="lvLabel">1</span><span id="lvPct" class="num">0%</span><span id="lvBonus" class="num" style="color:var(--good)"></span></b><div class="bar"><i id="lvBar"></i></div></div>
   <div class="clock"><span class="t num" id="clk">06:00</span><span class="d" id="date">10月28日(水)・川島</span></div>
 </div>
 
@@ -699,13 +699,22 @@ const yen = n => Math.floor(n).toLocaleString('ja-JP') + '円';
 const ppl = n => Math.floor(n).toLocaleString('ja-JP') + '人';
 
 /* ================= 状態と保存 ================= */
+// 時計：実際の日本時間を使う（タブを閉じたり裏にしても、ずれない）
+function jstNow(){
+  const j = new Date(Date.now() + 9*3600*1000);
+  return { h:j.getUTCHours(), m:j.getUTCMinutes(), mo:j.getUTCMonth(), d:j.getUTCDate(), wd:j.getUTCDay() };
+}
 function fresh(){ return { v:1, money:10000, total:0, riders:0, tourists:0, built:LINES.map(()=>[]), trains:LINES.map(()=>0),
   sights:[], loan:0, min:360, saved:Date.now(), rate:0, lv:1, names:true, company:'' }; }
 function load(){ try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) return s; } catch(e){} return null; }
 function save(){ S.saved = Date.now(); S.rate = R.inc; try { localStorage.setItem(KEY, JSON.stringify(S)); } catch(e){} }
-let S = load() || fresh();
-S.company = S.company || ''; S.stLv = S.stLv || {}; S.avgInc = S.avgInc || 0;
-S.tlv = LINES.map((L,i) => (S.tlv && S.tlv[i]) || 0); S.cond = LINES.map((L,i) => (S.cond && S.cond[i] != null) ? S.cond[i] : 100); S.built = LINES.map((L,i) => S.built[i] || []); S.trains = LINES.map((L,i) => S.trains[i] || 0);
+function migrate(S){
+  S.company = S.company || ''; S.stLv = S.stLv || {}; S.avgInc = S.avgInc || 0; S.invest = S.invest || 0;
+  S.tlv = LINES.map((L,i) => (S.tlv && S.tlv[i]) || 0); S.cond = LINES.map((L,i) => (S.cond && S.cond[i] != null) ? S.cond[i] : 100);
+  S.built = LINES.map((L,i) => S.built[i] || []); S.trains = LINES.map((L,i) => S.trains[i] || 0);
+  return S;
+}
+let S = migrate(load() || fresh());
 let R = { inc:0, rid:0, tou:0, sat:1, per:{}, dem:{} };
 
 /* ================= 路線の計算 ================= */
@@ -748,7 +757,7 @@ const TLV_MAX = 100;
 const tlvCost = li => Math.round(90000 * Math.pow(1.05, S.tlv[li]) / 1000) * 1000;
 const repairCost = li => Math.round((100 - S.cond[li]) * 60 * Math.max(1, S.trains[li]) / 100) * 100;
 const condFactor = li => 0.4 + 0.6 * S.cond[li] / 100;
-const lineInc = li => { const p = R.per[li]; return p ? Math.round(p.sv * p.fare * (1 + 0.1*R.sat) * (1 + (R.bonus||0))).toLocaleString('ja-JP') : '0'; };
+const lineInc = li => { const p = R.per[li]; return p ? Math.round(p.sv * p.fare * (1 + 0.1*R.sat) * (1 + (R.bonus||0) + (R.lvb||0))).toLocaleString('ja-JP') : '0'; };
 const maxTrains = li => S.built[li].length; // 1区間ごとに1編成まで
 function touches(li,i){
   const [a,b] = ends(li,i);
@@ -824,7 +833,7 @@ const levelFor = t => { let l=1; for (let i=1;i<LEVELS.length;i++) if (t>=LEVELS
 
 /* ================= 収益 ================= */
 function computeRates(){
-  const hm = HOURS[Math.floor(S.min/60)%24];
+  const hm = HOURS[jstNow().h];
   const op = [], nOp = {}, tourAt = {};
   for (const k of S.sights) tourAt[SIGHTS[k].st] = (tourAt[SIGHTS[k].st]||0) + SIGHTS[k].tour;
   LINES.forEach((L,li) => { const names = lineStations(li); if (names.length && S.trains[li] > 0){ op.push({li,p:{names}}); for (const n of names) nOp[n]=(nOp[n]||0)+1; } });
@@ -843,7 +852,8 @@ function computeRates(){
   // 名所：観光収益（円/秒）と全路線の収益ボーナス。駅が開業している名所だけ効く
   let sInc = 0, bonus = 0;
   for (const k of S.sights){ const sg = SIGHTS[k]; if (sg && isOpen(sg.st)){ sInc += sg.inc*(0.5+0.5*hm); bonus += sg.bonus/100; } }
-  R = { inc: inc*(1+0.1*sat)*(1+bonus) + sInc, rid, tou, sat, per, dem:sd, sInc, bonus };
+  const lvb = 0.02*(S.lv-1); // レベル1上がるごとに全路線の収益+2%
+  R = { inc: inc*(1+0.1*sat)*(1+bonus+lvb) + sInc, rid, tou, sat, per, dem:sd, sInc, bonus, lvb };
 }
 
 /* ================= 操作 ================= */
@@ -873,16 +883,18 @@ function act(a){
     if (S.money < c) return toast('お金が足りません'); S.money -= c; S.invest = (S.invest||0) + c; ops.forEach(i => S.cond[i] = 100); toast('全路線の車両を修理しました'); }
   if (k === 'upst'){ const c = upCost(x); if (stLv(x) >= ST_MAX || !stationLines(x,true).length) return; if (S.money < c) return toast('お金が足りません');
     S.money -= c; S.invest = (S.invest||0) + c; S.stLv[x] = stLv(x) + 1; toast(`${x}駅がLv${S.stLv[x]}になりました（乗客 +${S.stLv[x]*40}%）`); }
-  if (k === 'reset'){ if (resetArm > performance.now()){ S = fresh(); resetArm=0; fitView(); toast('最初からやり直します'); } else { resetArm = performance.now()+3000; toast('もう一度押すとデータを消して最初から始めます'); } }
+  if (k === 'resetall'){ const pw = $('adminPw').value.trim(); if (!pw) return toast('パスワードを入れてください');
+    if (resetAllArm > performance.now()){ resetAllArm = 0; adminReset(pw); } else { resetAllArm = performance.now()+4000; toast('本当に全員をリセットしますか？もう一度押すと実行します'); } return; }
+  if (k === 'reset'){ if (resetArm > performance.now()){ S = migrate(Object.assign(fresh(), { company:S.company, epoch:S.epoch })); resetArm=0; fitView(); toast('最初からやり直します'); } else { resetArm = performance.now()+3000; toast('もう一度押すとデータを消して最初から始めます'); } }
   if (k === 'go'){ const p = pt(x); cam.x=p.x; cam.y=p.y; cam.z=Math.max(cam.z,1.1); clampCam(); }
   if (k === 'open'){ openPanel(x); return; }
   changed();
 }
-let resetArm = 0;
+let resetArm = 0, resetAllArm = 0;
 function changed(){
   const nl = levelFor(S.total);
   if (nl > S.lv){
-    S.lv = nl; toast(`レベル${nl}になりました！銀行で借りられる額が増えました`);
+    S.lv = nl; toast(`レベル${nl}になりました！全路線の収益が+${(nl-1)*2}%になりました`);
   }
   computeRates(); renderPanel(); hud(); save();
 }
@@ -962,7 +974,10 @@ function renderPanel(){
       <div class="field"><input id="companyName" maxlength="20" placeholder="例：川島急行電鉄"><button class="buy" data-act="company">保存</button></div></div>
       <div class="item"><div class="seg"><span>駅名の表示</span><button class="buy alt" data-act="names">${S.names?'表示中':'非表示'}</button></div></div>
       <div class="item"><p class="note">データはこのブラウザに自動保存されます。閉じている間も、最大3時間ぶん収益の半分が入ります。</p>
-      <div class="seg"><span>最初からやり直す</span><button class="buy warn" data-act="reset">リセット</button></div></div>`;
+      <div class="seg"><span>最初からやり直す</span><button class="buy warn" data-act="reset">リセット</button></div></div>
+      <div class="item"><div class="ihead">管理者用：全員のデータをリセット</div>
+      <p class="note">全プレイヤーの進み具合とランキングを消して、最初からにします。パスワードが必要です。</p>
+      <div class="field"><input id="adminPw" type="password" autocomplete="off" placeholder="パスワード"><button class="buy warn" data-act="resetall">全員リセット</button></div></div>`;
   } else if (view.startsWith('st:')){
     const name = view.slice(3); title = name + '駅';
     const lines = stationLines(name,false), open = stationLines(name,true);
@@ -1013,8 +1028,8 @@ let toastT;
 function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('show'),2600); }
 function hud(){
   const lo = LEVELS[S.lv-1] ?? 0, hi = LEVELS[S.lv] ?? lo, f = hi>lo ? Math.min(1,(S.total-lo)/(hi-lo)) : 1;
-  $('lvNum').textContent = S.lv; $('lvLabel').textContent = S.lv; $('lvPct').textContent = Math.floor(f*100)+'%'; $('lvBar').style.width = (f*100)+'%';
-  const m = Math.floor(S.min), hh = Math.floor(m/60)%24, mm = m%60, d = new Date(BASE_DATE); d.setDate(d.getDate() + Math.floor(m/1440));
+  $('lvNum').textContent = S.lv; $('lvLabel').textContent = S.lv; $('lvPct').textContent = Math.floor(f*100)+'%'; $('lvBar').style.width = (f*100)+'%'; $('lvBonus').textContent = S.lv > 1 ? `収益+${(S.lv-1)*2}%` : '';
+  const t = jstNow(), hh = t.h, mm = t.m, d = { getMonth:()=>t.mo, getDate:()=>t.d, getDay:()=>t.wd };
   $('clk').textContent = `${String(hh).padStart(2,'0')}:${String(mm).padStart(2,'0')}`;
   $('date').textContent = `${d.getMonth()+1}月${d.getDate()}日(${WEEK[d.getDay()]})・川島`;
   $('sTotal').textContent = yen(S.total); $('sRiders').textContent = ppl(S.riders); $('sTour').textContent = ppl(S.tourists);
@@ -1401,6 +1416,7 @@ async function initNet(){
     const me = db.ref('presence/' + NET.me);
     db.ref('.info/connected').on('value', s => { if (s.val()){ me.onDisconnect().remove(); me.set(true); } });
     db.ref('presence').on('value', s => { NET.online = s.numChildren(); renderRank(); });
+    db.ref('config/epoch').on('value', s => { if (s.val()) applyEpoch(s.val()); });
     pushScore(); setInterval(pushScore, 20000);
   } catch(e){ NET.err = 'connect'; console.error(e); }
   renderRank();
@@ -1418,6 +1434,25 @@ function askCompany(){
     S.company = v; save(); ov.remove(); setTimeout(pushScore, 50); };
   $('joinBtn').onclick = go; $('joinName').addEventListener('keydown', e => { if (e.key === 'Enter') go(); });
   setTimeout(() => $('joinName').focus(), 50);
+}
+
+// 管理者が全員リセットしたら（リセット番号が変わったら）、自分のデータも最初からにする
+function applyEpoch(ep){
+  if (!ep) return;
+  if (S.epoch === ep) return;
+  const had = S.epoch !== undefined || totalBuilt() > 0;
+  S = migrate(Object.assign(fresh(), { company:S.company, epoch:ep }));
+  SPEC = null; $('specBar').hidden = true; lastPush = ''; seenDone.clear();
+  computeRates(); hud(); renderPanel(); save(); fitView();
+  if (had) toast('管理者が全員のデータをリセットしました。最初からスタートです');
+}
+async function adminReset(pw){
+  if (!NET.fdb) return toast('オンラインにつながっていません');
+  try {
+    // パスワードはサーバー側のルールで確かめる（ページの中には入っていない）
+    await NET.fdb.ref().update({ ranking:null, config:{ epoch:String(Date.now()), key:pw } });
+    toast('全員のデータをリセットしました');
+  } catch(e){ toast('パスワードが違います'); }
 }
 async function pushScore(){
   if (!NET.db || !NET.me || pushing) return;
